@@ -1,0 +1,9 @@
+Name: capstone
+Description: Capstone disassembly engine
+Version: 5.0.1
+libdir=/opt/homebrew/Cellar/capstone/5.0.1/lib
+includedir=/opt/homebrew/Cellar/capstone/5.0.1/include/capstone
+archive=${libdir}/libcapstone.a
+Libs: -L${libdir} -lcapstone
+Cflags: -I${includedir}
+archs=arm aarch64 m68k mips powerpc sparc systemz x86 xcore tms320c64x m680x evm riscv mos65xx wasm bpf sh tricore

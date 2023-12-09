@@ -5,6 +5,13 @@
 #include "sms_ntsc.h"
 #include "md_ntsc.h"
 
+// Tiny WebSocket server
+#include "server.h"
+// Add a hook to enable debugging
+#include "cpuhook.h"
+#include "debug.h"
+jmp_buf jmp_env;
+
 #define SOUND_FREQUENCY 48000
 #define SOUND_SAMPLES_SIZE  2048
 
@@ -18,6 +25,7 @@ int debug_on    = 0;
 int turbo_mode  = 0;
 int use_sound   = 1;
 int fullscreen  = 0; /* SDL_WINDOW_FULLSCREEN */
+int pause_emu   = 1; // Pause on start
 
 struct {
   SDL_Window* window;
@@ -481,7 +489,8 @@ static int sdl_control_update(SDL_Keycode keystate)
 
       case SDLK_ESCAPE:
       {
-        return 0;
+        pause_emu ^= 1;
+        break;
       }
 
       default:
@@ -718,6 +727,9 @@ int main (int argc, char **argv)
   error_init();
   set_config_defaults();
 
+  start_server();
+  set_cpu_hook(process_breakpoints);
+
   /* mark all BIOS as unloaded */
   system_bios = 0;
 
@@ -890,8 +902,16 @@ int main (int argc, char **argv)
       }
     }
 
-    sdl_video_update();
-    sdl_sound_update(use_sound);
+    // Debugger will jump here whenever breakpoint/step is hit
+    int is_paused = setjmp(jmp_env);
+    if (is_paused) {
+      pause_emu = 1;
+    }
+
+    if (!pause_emu) {
+      sdl_video_update();
+      sdl_sound_update(use_sound);
+    }
 
     if(!turbo_mode && sdl_sync.sem_sync && sdl_video.frames_rendered % 3 == 0)
     {

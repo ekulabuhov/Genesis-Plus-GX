@@ -1,0 +1,42 @@
+.hex-value {
+    width: 25px;
+    text-align: center;
+}
+
+.header .hex-values, .header .ascii-values {
+    font-weight: 700;
+}
+
+.hex-values, .ascii-values {
+    display: inline-flex;
+}
+
+.hex-value:focus, .ascii-value:focus {
+    outline-offset: 1px;
+    outline: #0078d4 2px solid;
+}
+
+.ascii-value {
+    width: 18px;
+    text-align: center;
+}
+
+.memory-viewer {
+    user-select: none;
+}
+
+.memory-viewer, .header {
+    display: inline-flex;
+}
+
+.memory-viewer div, .header div {
+    padding: 0 6px;
+}
+
+.hovered {
+    background-color: rgba(38, 79, 120, 0.25)
+}
+
+.selected {
+    background-color: #264f78;
+}

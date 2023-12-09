@@ -1,0 +1,189 @@
+<html data-bs-theme="dark" ng-app="app">
+  <head>
+    <link
+      href="bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
+      crossorigin="anonymous"
+    />
+    <script src="angular.min.js"></script>
+    <link href="index.css" rel="stylesheet" />
+    <link href="memory-viewer/memory-viewer.css" rel="stylesheet" />
+    <script type="module" src="index.js"></script>
+    <script>
+      /* WebSocket. */
+      var ws;
+      var connected = false;
+
+      function scoll_to_bottom() {
+        var logTa = document.getElementById("taLog");
+        logTa.scrollTop = logTa.scrollHeight;
+      }
+
+      /* Establish connection. */
+      function doConnect(addr) {
+        /* Message to be sent. */
+        var msg;
+
+        /* Do connection. */
+        ws = new WebSocket(addr);
+
+        /* Register events. */
+        ws.onopen = function () {
+          connected = true;
+          document.getElementById("btConn").value = "Disconnect!";
+          document.getElementById("taLog").value += "Connection opened\n";
+
+          ws.send("asm");
+          ws.send("regs");
+
+          scoll_to_bottom();
+        };
+
+        /* Deals with messages. */
+        ws.onmessage = function (evt) {
+          const response = JSON.parse(evt.data);
+          const regWindow = angular.element(document.querySelector('.reg-window'));
+
+          if (response.type === "regs") {
+            regWindow.controller().vals = response.data;
+            regWindow.scope().$digest();
+          }
+
+          if (response.type === "asm") {
+            /** @type {asm} */
+            const parsedAsm = JSON.parse(evt.data).data;
+            regWindow.controller().asm = parsedAsm;
+            const formattedAsm = parsedAsm.map(
+              (pa) =>
+                `<div><span class="addr">` +
+                "0x" +
+                pa.address.toString(16) +
+                `</span>` +
+                ": " +
+                `<span class="mnemonic">` +
+                pa.mnemonic +
+                `</span>` +
+                `<span class="op_str">` +
+                pa.op_str +
+                `</span></div>`
+            );
+            document.getElementById("disasm").innerHTML +=
+              formattedAsm.join("\n");
+          }
+          
+          if (response.type === "mem") {
+            const scope = angular.element(document.querySelector('memory-viewer')).isolateScope();
+            scope.$ctrl.memory = response.data;
+            scope.$digest();
+          }
+        };
+
+        /* Close events. */
+        ws.onclose = function (event) {
+          document.getElementById("btConn").value = "Connect!";
+          document.getElementById("taLog").value +=
+            "Connection closed: wasClean: " +
+            event.wasClean +
+            ", evCode: " +
+            event.code +
+            "\n";
+          scoll_to_bottom();
+          connected = false;
+        };
+      }
+
+      document.addEventListener("DOMContentLoaded", function (event) {
+        /* Connect buttom. */
+        document.getElementById("btConn").onclick = function () {
+          if (connected == false) {
+            var txt = document.getElementById("txtServer").value;
+            doConnect(txt);
+          } else {
+            ws.close();
+            connected = false;
+            document.getElementById("btConn").value = "Connect!";
+          }
+        };
+
+        /* Input text message. */
+        document
+          .getElementById("txtMsg")
+          .addEventListener("keyup", function (e) {
+            var key = e.which || e.keyCode;
+            if (key == 13) document.getElementById("btMsg").click();
+          });
+
+        /* Send message. */
+        document.getElementById("btMsg").onclick = function () {
+          if (connected == true) {
+            var txt = document.getElementById("txtMsg");
+            var log = document.getElementById("taLog");
+
+            ws.send(txt.value);
+            log.value += "Send: " + txt.value + "\n";
+            txt.value = "";
+            scoll_to_bottom();
+          }
+        };
+      });
+    </script>
+  </head>
+  <body class="container p-3" ng-controller="RegController as ctrl">
+    <div class="row">
+      <div class="col" id="header">
+        <h1 align="left">Debugger</h1>
+        Server:
+        <input type="text" id="txtServer" value="ws://localhost:8080" />
+        <input
+          type="button"
+          id="btConn"
+          name="btConn"
+          value="Connect!"
+        /><br /><br />
+        Message:
+        <input
+          type="text"
+          id="txtMsg"
+          value=""
+          placeholder="Type your message (ENTER to send)"
+        />
+        <input type="button" id="btMsg" name="btMsg" value="Send" />
+        <input type="button" value="Step" onclick="ws.send('step')" />
+        <br /><br />
+        <div class="disasm-window overflow-y-scroll" style="position: relative">
+          <div class="code-overlay w-100" style="position: absolute">
+            <div class="debug-line" style="top: {{ ctrl.debugLineTop }}"></div>
+          </div>
+          <div class="code-listing" id="disasm"></div>
+        </div>
+        <textarea class="mt-3" rows="10" cols="50" id="taLog" name="taLog"></textarea>
+      </div>
+      <div class="col reg-window">
+        <div class="row">
+          <div class="col">
+            <div class="input-group mb-3" ng-repeat="reg in ctrl.regs[0]">
+              <span class="input-group-text">{{reg}}</span>
+              <input
+                type="text"
+                class="form-control"
+                value="{{ctrl.displayReg(reg)}}"
+              />
+            </div>
+          </div>
+          <div class="col">
+            <div class="input-group mb-3" ng-repeat="reg in ctrl.regs[1]">
+              <span class="input-group-text">{{reg}}</span>
+              <input
+                type="text"
+                class="form-control"
+                value="{{ctrl.displayReg(reg)}}"
+              />
+            </div>
+          </div>
+        </div>
+        <memory-viewer class="font-monospace"></memory-viewer>
+      </div>
+    </div>
+  </body>
+</html>

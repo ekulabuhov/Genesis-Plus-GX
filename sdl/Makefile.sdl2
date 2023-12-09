@@ -31,11 +31,12 @@
 NAME	  = gen_sdl2
 
 CC        = gcc
-CFLAGS    = `sdl2-config --cflags` -march=native -O6 -fomit-frame-pointer -Wall -Wno-strict-aliasing -std=c99 -pedantic-errors
-#-g -ggdb -pg
-#-fomit-frame-pointer
-#LDFLAGS   = -pg
+CFLAGS    = `sdl2-config --cflags` -march=native -O3 -fomit-frame-pointer -Wall -Wno-strict-aliasing -std=c99 -pedantic-errors
+# Flags required to build on MacOS. -g provides debug symbols.
+CFLAGS   += -Wpedantic -Wc11-extensions -Winvalid-utf8 -Wstrict-prototypes -g
+
 DEFINES   = -DLSB_FIRST -DUSE_16BPP_RENDERING -DUSE_LIBTREMOR -DUSE_LIBCHDR -DMAXROMSIZE=33554432 -DHAVE_YM3438_CORE -DHAVE_OPLL_CORE -DENABLE_SUB_68K_ADDRESS_ERROR_EXCEPTIONS
+DEFINES  += -DHOOK_CPU
 
 ifneq ($(OS),Windows_NT)
 DEFINES += -DHAVE_ALLOCA_H
@@ -46,6 +47,16 @@ INCLUDES  = -I$(SRCDIR) -I$(SRCDIR)/z80 -I$(SRCDIR)/m68k -I$(SRCDIR)/sound -I$(S
 LIBS	  = `sdl2-config --libs` -lz -lm
 
 CHDLIBDIR = $(SRCDIR)/cd_hw/libchdr
+
+INCLUDES += -I$(SRCDIR)/debug
+
+# A tiny WebSocket server
+INCLUDES += -Isdl2/wsServer/include
+LIBS += -Lsdl2/wsServer -lws
+
+# Capstone disassembler
+INCLUDES += -Isdl2/capstone/5.0.1/include
+LIBS += -Lsdl2/capstone/5.0.1/lib -lcapstone
 
 OBJDIR = ./build_sdl2
 
@@ -114,7 +125,11 @@ OBJECTS	+=	$(OBJDIR)/main.o	\
 		$(OBJDIR)/config.o	\
 		$(OBJDIR)/error.o	\
 		$(OBJDIR)/unzip.o       \
-		$(OBJDIR)/fileio.o	
+		$(OBJDIR)/fileio.o	\
+		$(OBJDIR)/server.o	\
+		$(OBJDIR)/capstone.o	\
+		$(OBJDIR)/cpuhook.o	\
+		$(OBJDIR)/debug.o
 
 OBJECTS	+=	$(OBJDIR)/bitwise.o	 \
 		$(OBJDIR)/block.o      \
@@ -182,6 +197,9 @@ $(OBJDIR)/%.o :	$(SRCDIR)/cart_hw/svp/%.c $(SRCDIR)/cart_hw/svp/%.h
 		$(CC) -c $(CFLAGS) $(INCLUDES) $(DEFINES) $< -o $@
 
 $(OBJDIR)/%.o :	$(SRCDIR)/cd_hw/%.c $(SRCDIR)/cd_hw/%.h	        
+		$(CC) -c $(CFLAGS) $(INCLUDES) $(DEFINES) $< -o $@
+
+$(OBJDIR)/%.o :	$(SRCDIR)/debug/%.c $(SRCDIR)/debug/%.h	        
 		$(CC) -c $(CFLAGS) $(INCLUDES) $(DEFINES) $< -o $@
 
 $(OBJDIR)/%.o :	$(SRCDIR)/z80/%.c $(SRCDIR)/z80/%.h	        
