@@ -31,7 +31,7 @@
 NAME	  = gen_sdl2
 
 CC        = gcc
-CFLAGS    = `sdl2-config --cflags` -march=native -O3 -fomit-frame-pointer -Wall -Wno-strict-aliasing -std=c99 -pedantic-errors
+CFLAGS    = `sdl2-config --cflags` -march=native -O0 -fomit-frame-pointer -Wall -Wno-strict-aliasing -std=c99 -pedantic-errors
 # Flags required to build on MacOS. -g provides debug symbols.
 CFLAGS   += -Wpedantic -Wc11-extensions -Winvalid-utf8 -Wstrict-prototypes -g
 

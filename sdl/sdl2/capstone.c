@@ -17,10 +17,9 @@ int main()
 }
 #endif
 
-
 void disasm_rom_as_json(uint16_t address, uint16_t length, char **jsonOut)
 {
-    unsigned char* romBytes = read_memory(address, length);
+    unsigned char *romBytes = read_memory(address, length);
     disasm_as_json(romBytes, address, length, jsonOut);
 }
 

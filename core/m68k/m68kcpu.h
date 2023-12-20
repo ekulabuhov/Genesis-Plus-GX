@@ -14,6 +14,7 @@
 #endif /* M68K_EMULATE_ADDRESS_ERROR */
 
 #include "m68k.h"
+#include "debug.h"
 
 
 /* ======================================================================== */
@@ -1409,6 +1410,9 @@ INLINE void m68ki_exception_interrupt(uint int_level)
   /* If vector is uninitialized, call the uninitialized interrupt vector */
   if(new_pc == 0)
     new_pc = m68ki_read_32((EXCEPTION_UNINITIALIZED_INTERRUPT<<2));
+
+  /* Debugger uses this flag to prevent jumping to interrupts */
+  dbg_in_interrupt = 1;
 
   /* Generate a stack frame */
   m68ki_stack_frame_3word(REG_PC, sr);

@@ -7,6 +7,7 @@
 #include <string.h>
 #include <math.h>
 
+// To get access to CPU registers
 #include "m68k.h"
 #include "capstone.h"
 // To unpause emu
@@ -14,7 +15,8 @@
 #include "debug.h"
 
 char *regs_as_json();
-char *read_memory_as_json(uint16_t address, uint16_t size);
+char *read_memory_as_json(uint32_t address, uint16_t size);
+uint32_t read_number_token();
 
 /**
  * @brief Called when a client connects to the server.
@@ -84,36 +86,74 @@ void onmessage(ws_cli_conn_t *client,
 		   msg, size, type, cli);
 #endif
 
-	char *message;
+	char *message = NULL;
 
 	if (strcmp((const char *)msg, "regs") == 0)
 	{
 		message = regs_as_json();
 	}
 
-	if (strcmp((const char *)msg, "asm") == 0)
+	// Format: "asm <address> <size>"
+	if (strstr((const char *)msg, "asm") == (const char *)msg)
 	{
-		disasm_rom_as_json(0x200, 100, &message);
+		strtok((char *)msg, " ");
+
+		uint32_t address = read_number_token();
+		uint16_t size = atoi(strtok(NULL, " "));
+		disasm_rom_as_json(address, size, &message);
 	}
 
 	if (strcmp((const char *)msg, "step") == 0)
 	{
 		dbg_trace = 1;
 		pause_emu = 0;
-		message = regs_as_json();
 	}
 
 	// Format: "mem <address> <size>"
-	if (strstr((const char *)msg, "mem") == (const char *)msg)
+	if (strstr((const char *)msg, "mem ") == (const char *)msg)
 	{
 		strtok((char *)msg, " ");
-		uint16_t address = atoi(strtok(NULL, " "));
+
+		uint32_t address = read_number_token();
 		uint16_t size = atoi(strtok(NULL, " "));
 		message = read_memory_as_json(address, size);
-		printf("reading addr: %d, with size: %d, val: %s\n", address, size, message);
+		printf("reading addr: %u, with size: %d, val: %s\n", address, size, message);
 	}
 
-	ws_sendframe_txt(client, message);
+	// Format: "memw <address> <value>"
+	if (strstr((const char *)msg, "memw ") == (const char *)msg)
+	{
+		strtok((char *)msg, " ");
+
+		uint32_t address = read_number_token();
+		uint16_t value = read_number_token();
+		write_memory_byte(address, value);
+	}
+
+	if (message != NULL)
+	{
+		ws_sendframe_txt(client, message);
+	}
+}
+
+/**
+ * Reads next token in space separated line. Convert it to number. 
+ * Supports hexadecimal values prepended by 0x.
+ */
+uint32_t read_number_token()
+{
+	uint32_t address;
+	char *address_string = strtok(NULL, " ");
+	if (strstr(address_string, "0x") == address_string)
+	{
+		address = (int)strtol(address_string, NULL, 0);
+	}
+	else
+	{
+		address = atoi(address_string);
+	}
+
+	return address;
 }
 
 char *regs_as_json()
@@ -137,7 +177,9 @@ char *regs_as_json()
 					 "\"a5\": %d, "
 					 "\"a6\": %d, "
 					 "\"a7\": %d, "
-					 "\"sp\": %d "
+					 "\"sp\": %d, "
+					 "\"sr\": %d, "
+					 "\"prev_pc\": %d "
 					 "}}",
 			m68k.pc,
 			m68k.dar[0],
@@ -156,23 +198,24 @@ char *regs_as_json()
 			m68k.dar[13],
 			m68k.dar[14],
 			m68k.dar[15],
-			m68k.dar[15]);
+			m68k.dar[15],
+			m68k_get_reg(M68K_REG_SR),
+			m68k.prev_pc);
 
 	return message;
 }
 
-char *read_memory_as_json(uint16_t address, uint16_t size)
+char *read_memory_as_json(uint32_t address, uint16_t size)
 {
 	// Each byte representation is 3 digits max (e.g. 255) plus 1 byte for comma, plus some extra bytes for template
 	char *result = malloc(size * 4 + 100);
-	char *template = "{ \"type\": \"mem\", \"data\": [";
-	sprintf(result, template);
+	char *template = "{ \"type\": \"mem\", \"address\": %u, \"data\": [";
+	char *pos = result + sprintf(result, template, address);
 
-	char *pos = result + strlen(template);
-	
 	for (int block = 0; block < ceil(size / 16.0); block++)
 	{
-		if (block > 0) {
+		if (block > 0)
+		{
 			pos += sprintf(pos, ",");
 		}
 
