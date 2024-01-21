@@ -7,127 +7,14 @@
       integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
       crossorigin="anonymous"
     />
+    <link rel="stylesheet" href="bootstrap-icons.min.css">
     <script src="angular.min.js"></script>
     <script src="bootstrap.bundle.min.js"></script>
-    <link href="index.css" rel="stylesheet" />
     <link href="memory-viewer/memory-viewer.css" rel="stylesheet" />
     <link href="asm-viewer/asm-viewer.css" rel="stylesheet" />
     <script type="module" src="index.js"></script>
-    <script>
-      /* WebSocket. */
-      var ws;
-      var connected = false;
-
-      function scoll_to_bottom() {
-        var logTa = document.getElementById("taLog");
-        logTa.scrollTop = logTa.scrollHeight;
-      }
-
-      /* Establish connection. */
-      function doConnect(addr) {
-        /* Message to be sent. */
-        var msg;
-
-        /* Do connection. */
-        ws = new WebSocket(addr);
-
-        /* Register events. */
-        ws.onopen = function () {
-          connected = true;
-          document.getElementById("btConn").value = "Disconnect!";
-          document.getElementById("taLog").value += "Connection opened\n";
-
-          ws.send("regs");
-
-          scoll_to_bottom();
-        };
-
-        /* Deals with messages. */
-        ws.onmessage = function (evt) {
-          const response = JSON.parse(evt.data);
-          const asmViewerScope = angular
-              .element(document.querySelector("asm-viewer"))
-              .isolateScope();
-
-          if (response.type === "regs") {
-            const regsViewerScope = angular
-              .element(document.querySelector("register-viewer"))
-              .isolateScope();
-
-            regsViewerScope.$ctrl.regs = response.data;
-            regsViewerScope.$digest();
-
-            asmViewerScope.$ctrl.regs = response.data;
-            asmViewerScope.$digest();
-          }
-
-          if (response.type === "asm") {
-            const parsedAsm = JSON.parse(evt.data).data;
-            asmViewerScope.$ctrl.asm = parsedAsm;
-            asmViewerScope.$digest();
-          }
-
-          if (response.type === "mem") {
-            const scope = angular
-              .element(document.querySelector("memory-viewer"))
-              .isolateScope();
-            scope.$ctrl.memory = response.data;
-            scope.$ctrl.address = response.address;
-            scope.$digest();
-          }
-        };
-
-        /* Close events. */
-        ws.onclose = function (event) {
-          document.getElementById("btConn").value = "Connect!";
-          document.getElementById("taLog").value +=
-            "Connection closed: wasClean: " +
-            event.wasClean +
-            ", evCode: " +
-            event.code +
-            "\n";
-          scoll_to_bottom();
-          connected = false;
-        };
-      }
-
-      document.addEventListener("DOMContentLoaded", function (event) {
-        /* Connect buttom. */
-        document.getElementById("btConn").onclick = function () {
-          if (connected == false) {
-            var txt = document.getElementById("txtServer").value;
-            doConnect(txt);
-          } else {
-            ws.close();
-            connected = false;
-            document.getElementById("btConn").value = "Connect!";
-          }
-        };
-
-        /* Input text message. */
-        document
-          .getElementById("txtMsg")
-          .addEventListener("keyup", function (e) {
-            var key = e.which || e.keyCode;
-            if (key == 13) document.getElementById("btMsg").click();
-          });
-
-        /* Send message. */
-        document.getElementById("btMsg").onclick = function () {
-          if (connected == true) {
-            var txt = document.getElementById("txtMsg");
-            var log = document.getElementById("taLog");
-
-            ws.send(txt.value);
-            log.value += "Send: " + txt.value + "\n";
-            txt.value = "";
-            scoll_to_bottom();
-          }
-        };
-      });
-    </script>
   </head>
-  <body class="container p-3" ng-controller="RegController as ctrl">
+  <body class="container p-3" ng-controller="RegController as $ctrl">
     <div class="row">
       <div class="col" id="header">
         <h1 align="left">Debugger</h1>
@@ -137,38 +24,32 @@
           type="button"
           id="btConn"
           name="btConn"
-          value="Connect!"
+          ng-value="$ctrl.btConnValue"
+          ng-click="$ctrl.onConnectClick()"
         /><br /><br />
         Message:
         <input
           type="text"
           id="txtMsg"
-          ng-model="ctrl.userMessage"
+          ng-model="$ctrl.userMessage"
           placeholder="Type your message (ENTER to send)"
         />
         <input
           type="button"
-          ng-disabled="!ctrl.userMessage"
+          ng-disabled="!$ctrl.userMessage"
           id="btMsg"
           name="btMsg"
           value="Send"
+          ng-click="$ctrl.onSendClick()"
         />
-        <input type="button" value="Step" onclick="ws.send('step')" />
-        <br /><br />
-
-        <asm-viewer></asm-viewer>
-
-        <textarea
-          class="mt-3"
-          rows="10"
-          cols="50"
-          id="taLog"
-          name="taLog"
-        ></textarea>
+        <input class="mb-3" type="button" value="Step" title="F10" onclick="ws.send('step')" />
+        <input class="mb-3" type="button" value="Run" title="F5" onclick="ws.send('run')" />
+        <asm-viewer regs="$ctrl.regs" asm="$ctrl.asm"></asm-viewer>
       </div>
       <div class="col reg-window">
-        <register-viewer class="row"></register-viewer>
-        <memory-viewer class="font-monospace"></memory-viewer>
+        <register-viewer regs="$ctrl.regs" class="row"></register-viewer>
+        <breakpoints></breakpoints>
+        <memory-viewer memory="$ctrl.memory" address="$ctrl.address" class="font-monospace"></memory-viewer>
       </div>
     </div>
   </body>

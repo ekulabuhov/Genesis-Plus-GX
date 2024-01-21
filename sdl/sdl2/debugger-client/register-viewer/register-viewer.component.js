@@ -6,7 +6,8 @@ export const RegisterViewerComponent = {
         <input
           type="text"
           class="form-control"
-          value="{{$ctrl.displayReg(reg)}}"
+          ng-model="$ctrl.regs[reg]"
+          ng-blur="$ctrl.onRegisterBlur(reg)"
         />
       </div>
     </div>
@@ -16,7 +17,8 @@ export const RegisterViewerComponent = {
         <input
           type="text"
           class="form-control"
-          value="{{$ctrl.displayReg(reg)}}"
+          ng-model="$ctrl.regs[reg]"
+          ng-blur="$ctrl.onRegisterBlur(reg)"
         />
       </div>
     </div>
@@ -26,7 +28,8 @@ export const RegisterViewerComponent = {
           <input
             class="form-check-input me-1"
             type="checkbox"
-            ng-checked="$ctrl.regs[reg.toLowerCase()]"
+            ng-model="$ctrl.regs[reg.toLowerCase()]"
+            ng-change="$ctrl.onFlagChange()"
             id="firstCheckbox"
           />
           <label class="form-check-label" for="firstCheckbox"
@@ -35,6 +38,9 @@ export const RegisterViewerComponent = {
         </li>
       </ul>
     </div>`,
+  bindings: {
+    regs: "<"
+  },
   controller: class RegisterViewerController {
     regLabels = [
       ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "PC"],
@@ -42,21 +48,50 @@ export const RegisterViewerComponent = {
       ["C", "V", "Z", "N", "X"],
     ];
     /** @type {import("../index").regs} */
-    _regs = {};
+    regs;
+    regEnum = [
+      "D0",
+      "D1",
+      "D2",
+      "D3",
+      "D4",
+      "D5",
+      "D6",
+      "D7",
+      "A0",
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "A5",
+      "A6",
+      "A7",
+      "PC",
+      "SR",
+      "SP",
+    ];
 
-    set regs(data) {
-      this._regs = data;
-      this._regs.c = data.sr & 1;
-      this._regs.v = (data.sr >> 1) & 1;
-      this._regs.z = (data.sr >> 2) & 1;
-      this._regs.n = (data.sr >> 3) & 1;
-      this._regs.x = (data.sr >> 4) & 1;
+    $onChanges(changesObj) {
+      if (changesObj["regs"].currentValue) {
+        const data = Object.assign({}, changesObj["regs"].currentValue);
+        this.regs = data;
+        this.regs.c = !!(data.sr & 1);
+        this.regs.v = !!((data.sr >> 1) & 1);
+        this.regs.z = !!((data.sr >> 2) & 1);
+        this.regs.n = !!((data.sr >> 3) & 1);
+        this.regs.x = !!((data.sr >> 4) & 1);
+
+        this.regLabels.forEach((row) =>
+          row.forEach((reg) => {
+            this.regs[reg] = this.displayReg(reg);
+          })
+        );
+      }
     }
 
-    get regs() {
-      return this._regs;
-    }
-
+    /**
+     * @param {string} reg
+     */
     displayReg(reg) {
       /** @type {number?} */
       let regVal = this.regs[reg.toLowerCase()];
@@ -66,6 +101,26 @@ export const RegisterViewerComponent = {
 
       regVal = regVal < 0 ? 0x100000000 + regVal : regVal;
       return "0x" + regVal.toString(16).toUpperCase().padStart(8, "0");
+    }
+
+    onFlagChange() {
+      // Clear last 5 bits
+      this.regs.sr >>= 5;
+      this.regs.sr <<= 5;
+      this.regs.sr |=
+        (this.regs.c && 0b1) |
+        (this.regs.v && 0b10) |
+        (this.regs.z && 0b100) |
+        (this.regs.n && 0b1000) |
+        (this.regs.x && 0b10000);
+
+      const ws = window["ws"];
+      ws.send(`regs set ${this.regEnum.indexOf("SR")} ${this.displayReg("SR")}`);
+    }
+
+    onRegisterBlur(reg) {
+      const ws = window["ws"];
+      ws.send(`regs set ${this.regEnum.indexOf(reg)} ${this.regs[reg]}`);
     }
   },
 };

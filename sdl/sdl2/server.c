@@ -93,6 +93,18 @@ void onmessage(ws_cli_conn_t *client,
 		message = regs_as_json();
 	}
 
+	// Format: "regs set <reg> <value>"
+	if (strstr((const char *)msg, "regs set") == (const char *)msg)
+	{
+		strtok((char *)msg, " ");
+		strtok(NULL, " "); // Skip "set"
+
+		m68k_register_t reg = read_number_token();
+		uint32_t value = read_number_token();
+
+		m68k_set_reg(reg, value);
+	}
+
 	// Format: "asm <address> <size>"
 	if (strstr((const char *)msg, "asm") == (const char *)msg)
 	{
@@ -106,6 +118,11 @@ void onmessage(ws_cli_conn_t *client,
 	if (strcmp((const char *)msg, "step") == 0)
 	{
 		dbg_trace = 1;
+		pause_emu = 0;
+	}
+
+	if (strcmp((const char *)msg, "run") == 0)
+	{
 		pause_emu = 0;
 	}
 
@@ -128,6 +145,23 @@ void onmessage(ws_cli_conn_t *client,
 		uint32_t address = read_number_token();
 		uint16_t value = read_number_token();
 		write_memory_byte(address, value);
+	}
+
+	// Format: "bpt add <address> <type>"
+	if (strstr((const char *)msg, "bpt add ") == (const char *)msg)
+	{
+		strtok((char *)msg, " ");
+		strtok(NULL, " "); // Skip "add"
+
+		uint32_t address = read_number_token();
+		uint16_t type = read_number_token();
+		add_bpt(type, address, 1);
+	}
+
+	// Format: "bpt clear_all"
+	if (strcmp((const char *)msg, "bpt clear_all") == 0)
+	{
+		clear_bpt_list();
 	}
 
 	if (message != NULL)

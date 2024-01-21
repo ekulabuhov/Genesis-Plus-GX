@@ -4,8 +4,8 @@
 #include <capstone/capstone.h>
 #include "debug.h"
 
-int disasm_as_json(const uint8_t *code, uint16_t address, size_t length, char **message);
-void disasm_rom_as_json(uint16_t address, uint16_t length, char **jsonOut);
+int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **message);
+void disasm_rom_as_json(uint32_t address, uint16_t length, char **jsonOut);
 
 #ifdef TEST_MAIN
 int main()
@@ -17,13 +17,13 @@ int main()
 }
 #endif
 
-void disasm_rom_as_json(uint16_t address, uint16_t length, char **jsonOut)
+void disasm_rom_as_json(uint32_t address, uint16_t length, char **jsonOut)
 {
     unsigned char *romBytes = read_memory(address, length);
     disasm_as_json(romBytes, address, length, jsonOut);
 }
 
-int disasm_as_json(const uint8_t *code, uint16_t address, size_t length, char **message)
+int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **message)
 {
     csh handle;
     cs_insn *insn;
@@ -52,7 +52,7 @@ int disasm_as_json(const uint8_t *code, uint16_t address, size_t length, char **
             char *lastChar = (j + 1 == count) ? "]}" : ",";
 
             sprintf(*message + strlen(*message), "{ "
-                                                 "\"address\": %d,"
+                                                 "\"address\": %u,"
                                                  "\"mnemonic\": \"%s\","
                                                  "\"op_str\": \"%s\" }%s\n",
                     insn[j].address, insn[j].mnemonic, insn[j].op_str, lastChar);

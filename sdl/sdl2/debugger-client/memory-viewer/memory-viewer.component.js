@@ -33,28 +33,20 @@ export const MemoryViewerComponent = {
         </div>
     </div>
     `,
+  bindings: {
+    memory: "<",
+    address: "<",
+  },
   controller: class MemoryViewerController {
-    constructor() {
-      this.lines = new Array(10).fill(0);
-      this.memory = [
-        [0x31, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-        [0x31, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-      ];
-      this.selected = 0;
-      this.hovered = 0;
-      this.address = 0;
-    }
+    /** @type {number[][]} */
+    memory;
+    selected = 0;
+    hovered = 0;
+    address = 0;
 
-    set selected(value) {
-      this._selected = value;
-      const lineIndex = Math.floor(this.selected / 16);
-      this.selectedValue = this.memory[lineIndex][this.selected % 16];
-    }
-
-    get selected() {
-      return this._selected;
-    }
-
+    /**
+     * @param {number} byte
+     */
     convertToAscii(byte) {
       return byte > 0x30 ? String.fromCharCode(byte) : ".";
     }
@@ -131,7 +123,11 @@ export const MemoryViewerComponent = {
       if (!this.waitingSecondKey) {
         /** @type {WebSocket} */
         const ws = window["ws"];
-        ws.send(`memw 0x${(this.address + this.selected).toString(16).toUpperCase()} ${value}`);
+        ws.send(
+          `memw 0x${(this.address + this.selected)
+            .toString(16)
+            .toUpperCase()} ${value}`
+        );
 
         if (this.selected + 1 < totalSize) {
           this.selected++;

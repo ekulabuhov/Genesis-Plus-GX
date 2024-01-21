@@ -25,6 +25,67 @@ int dbg_in_interrupt;
 // Callback that is executed each time debug event happens (e.g. step)
 void (*debug_hook)(dbg_event_t type) = NULL;
 
+static breakpoint_t *first_bp = NULL;
+
+breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width) {
+    breakpoint_t *bp = (breakpoint_t *)malloc(sizeof(breakpoint_t));
+
+    bp->type = type;
+    bp->address = address;
+    bp->width = width;
+    bp->enabled = 1;
+
+    if (first_bp) {
+        bp->next = first_bp;
+        bp->prev = first_bp->prev;
+        first_bp->prev = bp;
+        bp->prev->next = bp;
+    }
+    else {
+        first_bp = bp;
+        bp->next = bp;
+        bp->prev = bp;
+    }
+
+    return bp;
+}
+
+static breakpoint_t *next_breakpoint(breakpoint_t *bp) {
+    return bp->next != first_bp ? bp->next : 0;
+}
+
+static void delete_breakpoint(breakpoint_t * bp) {
+    if (bp == first_bp) {
+        if (bp->next == bp) {
+            first_bp = NULL;
+        }
+        else {
+            first_bp = bp->next;
+        }
+    }
+
+    bp->next->prev = bp->prev;
+    bp->prev->next = bp->next;
+
+    free(bp);
+}
+
+void clear_bpt_list() {
+    while (first_bp != NULL) delete_breakpoint(first_bp);
+}
+
+void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigned int value)
+{
+    breakpoint_t *bp;
+    for (bp = first_bp; bp; bp = next_breakpoint(bp)) {
+        if (!(bp->type & type) || !bp->enabled) continue;
+        if ((address <= (bp->address + bp->width)) && ((address + width) >= bp->address)) {
+            dbg_paused = 1;
+            break;
+        }
+    }
+}
+
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
     switch (type)
@@ -42,6 +103,11 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
             break;
         }
 
+        if (!dbg_trace) {
+            // Will set dbg_paused if hit
+            check_breakpoint(type, width, address, value);
+        }
+
         if (dbg_paused)
         {
             dbg_paused = 0;
@@ -54,13 +120,12 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
         {
             dbg_trace = 0;
             dbg_paused = 1;
+            break;
         }
 
         break;
-    case HOOK_M68K_W:
-        break;
-
     default:
+        check_breakpoint(type, width, address, value);
         break;
     }
 }

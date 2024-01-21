@@ -19,4 +19,16 @@ unsigned char read_memory_byte(unsigned int address);
 void write_memory_byte(unsigned int address, unsigned int value);
 unsigned char* read_memory(unsigned int address, unsigned int size);
 
+typedef struct breakpoint_s {
+    struct breakpoint_s *next, *prev;
+    int enabled;
+    int width;
+    hook_type_t type;
+    unsigned int address;
+} breakpoint_t;
+
+breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width);
+
+void clear_bpt_list();
+
 #endif /* _DEBUG_H_ */

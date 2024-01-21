@@ -26,31 +26,23 @@ export const AsmViewerComponent = {
             </div>
         </div>
     </div>`,
+  bindings: {
+    regs: "<",
+    asm: "<"
+  },
   controller: class AsmViewerController {
     /** @type {{address: number; mnemonic: string; op_str: string; }[]} asm */
-    _asm = [];
+    asm = [];
     debugLineTop = 0;
     branchLineTop = 0;
     branchLineHeight = 0;
     /** @type {import("../index").regs} */
-    _regs = {};
+    regs;
 
-    set asm(value) {
-        this._asm = value;
+    $onChanges(changesObj) {
+      if (changesObj["regs"]?.currentValue || changesObj["asm"]?.currentValue) {
         this.refresh();
-    }
-
-    get asm() {
-        return this._asm;
-    }
-
-    set regs(value) {
-        this._regs = value;
-        this.refresh();
-    }
-
-    get regs() {
-        return this._regs;
+      }
     }
 
     refresh() {
@@ -65,7 +57,7 @@ export const AsmViewerComponent = {
         console.log("instruction not found for ", this.regs.pc);
         /** @type {WebSocket} */
         const ws = window["ws"];
-        ws.send(`asm ${this.regs.prev_pc || this.regs.pc} 100`);
+        ws.send(`asm ${this.regs.pc} 100`);
         return;
       }
 
@@ -102,8 +94,11 @@ export const AsmViewerComponent = {
       }
     }
 
-    displayTooltip(/** @type {MouseEvent}  */ event, /** @type {string} */ mnemonic) {
-        const branchDescription = `Bcc-Branch Conditionally
+    displayTooltip(
+      /** @type {MouseEvent}  */ event,
+      /** @type {string} */ mnemonic
+    ) {
+      const branchDescription = `Bcc-Branch Conditionally
 Syntax: Bcc <label>
 Size: Short (8-bit displacement) or default (16-bit
 displacement)
@@ -116,7 +111,7 @@ of the following:
 
 CC-Carry clear\t\t\tLO-Lower (U)
 CS-Carry set\t\t\t\tLS-Low or same (U)
-EQ-Equal\t\t\t\t\tLT-Less than (S)
+EQ-Equal (Z-bit set)\t\tLT-Less than (S)
 GE-greater than or equal (S)\tMI-Minus (V-bit set)
 GT-greater than (S)\t\tNE-Not equal (Z-bit clear)
 HI-High (U)\t\t\t\tPL-Plus (V-bit clear)
@@ -129,27 +124,27 @@ apply the Unsigned and Signed operations, respectively.
 If the destination of the branch is to the next instruction,
 the short form of the instruction must not be used. `;
 
-        const branchInstructions = [
-          "bcc",
-          "bcs",
-          "beq",
-          "bge",
-          "bgt",
-          "bhi",
-          "bhs",
-          "ble",
-          "blo",
-          "bls",
-          "blt",
-          "bmi",
-          "bne",
-          "bpl",
-          "bvc",
-          "bvs",
-        ];
+      const branchInstructions = [
+        "bcc",
+        "bcs",
+        "beq",
+        "bge",
+        "bgt",
+        "bhi",
+        "bhs",
+        "ble",
+        "blo",
+        "bls",
+        "blt",
+        "bmi",
+        "bne",
+        "bpl",
+        "bvc",
+        "bvs",
+      ];
 
-        const descriptions = {
-          andi: `ANDI-Logical AND Immediate
+      const descriptions = {
+        andi: `ANDI-Logical AND Immediate
 Syntax: ANDI #<data>, <ea>
 Size: Byte, Word or Long
 
@@ -163,13 +158,13 @@ C-Always cleared.
 The immediate data field is logically ANDed with the
 destination operand. The result is stored in the destination
 location.`,
-          lea: `LEA-Load Effective Address
+        lea: `LEA-Load Effective Address
 Syntax: LEA <ea>,An
 Size: Long
 The LEA instruction does not affect any condition codes.
 The effective address is loaded into the specified address
 register.`,
-          move: `MOVE-Move Data from Source to Destination
+        move: `MOVE-Move Data from Source to Destination
 Syntax: MOVE <source ea>, <destination ea>
 Size: Byte, Word or Long
 
@@ -190,7 +185,7 @@ addressing cannot be used for byte size operations.
 
 Only data alterable addressing modes can be used for the
 <destination ea>.`,
-          movem: `MOVEM-Move Multiple Registers
+        movem: `MOVEM-Move Multiple Registers
 MOVEM moves multiple registers to memory or moves
 multiple words of memory to registers. It is used as a high
 speed register save and restore mechanism.
@@ -250,7 +245,7 @@ The register list is specified by giving lists of register
 names separated by slashes. A range of registers can be
 specified by giving two register names separated by a
 hyphen. `,
-          tst: `TST-Test an Operand
+        tst: `TST-Test an Operand
 Syntax: TST <ea>
 Size: Byte, Word or Long
 Condition Codes:
@@ -264,23 +259,23 @@ The operand specified by <ea> is compared with zero and
 the condition codes set as a result of the test. Only data
 alterable addressing modes can be used by the TST
 instruction.`,
-        };
+      };
 
-        branchInstructions.forEach(
-          (bi) => (descriptions[bi] = branchDescription)
-        );
+      branchInstructions.forEach(
+        (bi) => (descriptions[bi] = branchDescription)
+      );
 
-        const title = descriptions[mnemonic.split(".")[0]];
-        if (!title) {
-          return;
-        }
-
-        new bootstrap.Tooltip(event.target, {
-          title,
-          container: "body",
-          sanitize: false,
-          customClass: "asm-tooltip",
-        }).show();
+      const title = descriptions[mnemonic.split(".")[0]];
+      if (!title) {
+        return;
       }
+
+      new bootstrap.Tooltip(event.target, {
+        title,
+        container: "body",
+        sanitize: false,
+        customClass: "asm-tooltip",
+      }).show();
+    }
   },
 };
