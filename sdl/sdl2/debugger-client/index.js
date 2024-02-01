@@ -13,12 +13,14 @@ import { AsmViewerComponent } from "./asm-viewer/asm-viewer.component.js";
 import { BreakpointsComponent } from "./breakpoints/breakpoints.component.js";
 import { MemoryViewerComponent } from "./memory-viewer/memory-viewer.component.js";
 import { RegisterViewerComponent } from "./register-viewer/register-viewer.component.js";
+import { SpriteViewerComponent } from "./sprite-viewer/sprite-viewer.component.js";
 import { WsService } from "./ws.service.js";
 
 const appModule = angular.module("app", []);
 appModule.component("memoryViewer", MemoryViewerComponent);
 appModule.component("registerViewer", RegisterViewerComponent);
 appModule.component("asmViewer", AsmViewerComponent);
+appModule.component("spriteViewer", SpriteViewerComponent);
 appModule.component("breakpoints", BreakpointsComponent);
 
 appModule.controller(
@@ -36,6 +38,8 @@ appModule.controller(
       [0x31, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     ];
     address = 0;
+    cram = [];
+    vram = [];
 
     constructor($scope) {
       this.$scope = $scope;
@@ -54,6 +58,8 @@ appModule.controller(
 
         ws.send("regs");
         ws.send("mem 256 128");
+        ws.send("mem 0 128 cram");
+        ws.send("mem 0 256 vram");
         WsService.syncBreakpoints();
       };
 
@@ -72,6 +78,14 @@ appModule.controller(
         if (response.type === "mem") {
           this.memory = response.data;
           this.address = response.address;
+
+          if (response.mem_type === "cram") {
+            this.cram = response.data;
+          }
+
+          if (response.mem_type === "vram") {
+            this.vram = response.data;
+          }
         }
 
         this.$scope.$apply();

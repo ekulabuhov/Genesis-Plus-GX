@@ -26,13 +26,16 @@ export class WsService {
 
   static syncBreakpoints() {
     /** @type {import('./breakpoints/breakpoints.component').Breakpoint[]} */
-    const breakpoints = JSON.parse(localStorage.getItem("breakpoints")) || [];
+    const breakpoints = (
+      JSON.parse(localStorage.getItem("breakpoints")) || []
+    ).filter((bpt) => bpt.enabled);
 
-    if (breakpoints.length) {
+    if (this.ws) {
       this.ws.send("bpt clear_all");
-      breakpoints
-        .filter((bpt) => bpt.enabled)
-        .forEach((bpt) => this.sendBreakpoint(bpt));
+
+      if (breakpoints.length) {
+        breakpoints.forEach((bpt) => this.sendBreakpoint(bpt));
+      }
     }
   }
 }

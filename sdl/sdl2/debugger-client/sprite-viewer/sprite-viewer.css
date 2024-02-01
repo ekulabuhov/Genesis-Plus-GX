@@ -1,0 +1,9 @@
+.pixel {
+    width: 20px;
+    height: 20px;
+}
+
+sprite-viewer {
+    display: flex;
+    flex-wrap: wrap;
+}

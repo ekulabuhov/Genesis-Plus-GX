@@ -12,6 +12,7 @@
     <script src="bootstrap.bundle.min.js"></script>
     <link href="memory-viewer/memory-viewer.css" rel="stylesheet" />
     <link href="asm-viewer/asm-viewer.css" rel="stylesheet" />
+    <link href="sprite-viewer/sprite-viewer.css" rel="stylesheet" />
     <script type="module" src="index.js"></script>
   </head>
   <body class="container p-3" ng-controller="RegController as $ctrl">
@@ -50,6 +51,7 @@
         <register-viewer regs="$ctrl.regs" class="row"></register-viewer>
         <breakpoints></breakpoints>
         <memory-viewer memory="$ctrl.memory" address="$ctrl.address" class="font-monospace"></memory-viewer>
+        <sprite-viewer vram="$ctrl.vram" cram="$ctrl.cram"></sprite-viewer>
       </div>
     </div>
   </body>

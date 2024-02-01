@@ -15,7 +15,7 @@ typedef enum {
 } dbg_event_t;
 
 void set_debug_hook(void(*hook)(dbg_event_t type));
-unsigned char read_memory_byte(unsigned int address);
+unsigned char read_memory_byte(unsigned int address, char* type);
 void write_memory_byte(unsigned int address, unsigned int value);
 unsigned char* read_memory(unsigned int address, unsigned int size);
 

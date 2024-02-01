@@ -15,7 +15,7 @@
 #include "debug.h"
 
 char *regs_as_json();
-char *read_memory_as_json(uint32_t address, uint16_t size);
+char *read_memory_as_json(uint32_t address, uint16_t size, char* type);
 uint32_t read_number_token();
 
 /**
@@ -126,14 +126,15 @@ void onmessage(ws_cli_conn_t *client,
 		pause_emu = 0;
 	}
 
-	// Format: "mem <address> <size>"
+	// Format: "mem <address> <size> (<type: "vram" | "cram">)"
 	if (strstr((const char *)msg, "mem ") == (const char *)msg)
 	{
 		strtok((char *)msg, " ");
 
 		uint32_t address = read_number_token();
 		uint16_t size = atoi(strtok(NULL, " "));
-		message = read_memory_as_json(address, size);
+		char* type = strtok(NULL, " ");
+		message = read_memory_as_json(address, size, type);
 		printf("reading addr: %u, with size: %d, val: %s\n", address, size, message);
 	}
 
@@ -239,12 +240,15 @@ char *regs_as_json()
 	return message;
 }
 
-char *read_memory_as_json(uint32_t address, uint16_t size)
+char *read_memory_as_json(uint32_t address, uint16_t size, char* type)
 {
 	// Each byte representation is 3 digits max (e.g. 255) plus 1 byte for comma, plus some extra bytes for template
 	char *result = malloc(size * 4 + 100);
-	char *template = "{ \"type\": \"mem\", \"address\": %u, \"data\": [";
-	char *pos = result + sprintf(result, template, address);
+	char *template = "{ \"type\": \"mem\", \"mem_type\": \"%s\", \"address\": %u, \"data\": [";
+	if (type == NULL) {
+		type = "rom";
+	}
+	char *pos = result + sprintf(result, template, type, address);
 
 	for (int block = 0; block < ceil(size / 16.0); block++)
 	{
@@ -257,7 +261,7 @@ char *read_memory_as_json(uint32_t address, uint16_t size)
 		for (uint16_t i = block * 16; i < fmin((block + 1) * 16, size); i++)
 		{
 			char *lastChar = (i + 1 == fmin((block + 1) * 16, size)) ? "]" : ",";
-			pos += sprintf(pos, "%u%s", read_memory_byte(address + i), lastChar);
+			pos += sprintf(pos, "%u%s", read_memory_byte(address + i, type), lastChar);
 		}
 	}
 	sprintf(pos, "]}");
