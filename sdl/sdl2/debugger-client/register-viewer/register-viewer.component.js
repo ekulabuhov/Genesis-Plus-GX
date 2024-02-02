@@ -8,6 +8,8 @@ export const RegisterViewerComponent = {
           class="form-control"
           ng-model="$ctrl.regs[reg]"
           ng-blur="$ctrl.onRegisterBlur(reg)"
+          ng-mousedown="$ctrl.onRegisterClick($event, reg)"
+          oncontextmenu="return false"
         />
       </div>
     </div>
@@ -19,6 +21,8 @@ export const RegisterViewerComponent = {
           class="form-control"
           ng-model="$ctrl.regs[reg]"
           ng-blur="$ctrl.onRegisterBlur(reg)"
+          ng-mousedown="$ctrl.onRegisterClick($event, reg)"
+          oncontextmenu="return false"
         />
       </div>
     </div>
@@ -37,9 +41,14 @@ export const RegisterViewerComponent = {
           >
         </li>
       </ul>
+    </div>
+    <div class="dropdown">
+      <ul class="dropdown-menu" data-bs-toggle="dropdown">
+        <li ng-repeat="menu in $ctrl.menu" ng-click="menu.click()"><a class="dropdown-item" href="#">{{menu.label}}</a></li>
+      </ul>
     </div>`,
   bindings: {
-    regs: "<"
+    regs: "<",
   },
   controller: class RegisterViewerController {
     regLabels = [
@@ -70,6 +79,7 @@ export const RegisterViewerComponent = {
       "SR",
       "SP",
     ];
+    menu = [];
 
     $onChanges(changesObj) {
       if (changesObj["regs"].currentValue) {
@@ -103,6 +113,20 @@ export const RegisterViewerComponent = {
       return "0x" + regVal.toString(16).toUpperCase().padStart(8, "0");
     }
 
+    displayHex(val, size) {
+      if (val === undefined) {
+        return;
+      }
+
+      let slice = 0;
+      if (size === "w") {
+        slice = -4;
+      }
+
+      val = val < 0 ? 0x100000000 + val : val;
+      return "$" + val.toString(16).toUpperCase().slice(slice);
+    }
+
     onFlagChange() {
       // Clear last 5 bits
       this.regs.sr >>= 5;
@@ -115,12 +139,69 @@ export const RegisterViewerComponent = {
         (this.regs.x && 0b10000);
 
       const ws = window["ws"];
-      ws.send(`regs set ${this.regEnum.indexOf("SR")} ${this.displayReg("SR")}`);
+      ws.send(
+        `regs set ${this.regEnum.indexOf("SR")} ${this.displayReg("SR")}`
+      );
     }
 
     onRegisterBlur(reg) {
       const ws = window["ws"];
-      ws.send(`regs set ${this.regEnum.indexOf(reg)} ${this.regs[reg]}`);
+      if (ws) {
+        ws.send(`regs set ${this.regEnum.indexOf(reg)} ${this.regs[reg]}`);
+      }
+    }
+
+    // Right click handler
+    onRegisterClick(event, reg) {
+      if (event.which !== 3) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const menu = document.querySelector("register-viewer .dropdown-menu");
+      const dropdown = bootstrap.Dropdown.getInstance(menu);
+      if (dropdown) {
+        dropdown.hide();
+      }
+      
+      const mouseReference = {
+        getBoundingClientRect: () => {
+          const x = event.clientX;
+          const y = event.clientY;
+          return {
+            width: 0,
+            height: 0,
+            top: y,
+            right: x,
+            bottom: y,
+            left: x,
+          };
+        },
+      };
+
+      this.menu = [
+        {
+          label: `View in memory viewer (${this.displayHex(
+            this.regs[reg.toLowerCase()]
+          )})`,
+          click: () => {
+            const ws = window["ws"];
+            // It's a display val (e.g. 0x00C00004)
+            let val = this.regs[reg];
+            // Replace last char with zero as control is zero based
+            val = val.slice(0, val.length - 1) + "0";
+            ws.send(`mem ${val} 128`);
+          },
+        },
+      ];
+
+      new bootstrap.Dropdown(menu, {
+        // reference: e.target
+        reference: mouseReference,
+      }).show();
+
+      return;
     }
   },
 };

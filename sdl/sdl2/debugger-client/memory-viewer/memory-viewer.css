@@ -21,15 +21,15 @@
     text-align: center;
 }
 
-.memory-viewer {
+.memory-row {
     user-select: none;
 }
 
-.memory-viewer, .header {
+.memory-row, .header {
     display: inline-flex;
 }
 
-.memory-viewer div, .header div {
+.memory-row div, .header div {
     padding: 0 6px;
 }
 
@@ -39,4 +39,10 @@
 
 .selected {
     background-color: #264f78;
+}
+
+memory-viewer {
+    border: var(--bs-border-width) solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    display: block;
 }

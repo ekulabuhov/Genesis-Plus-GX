@@ -1,5 +1,10 @@
 export const MemoryViewerComponent = {
   template: `
+    <select class="form-select border-0 shadow-none" ng-model="$ctrl.selectedMemType" ng-change="$ctrl.selectMemType()">
+      <option value="rom">ROM</option>
+      <option value="vram">VRAM</option>
+      <option value="cram">CRAM</option>
+    </select>
     <div class="header">
       <div class="invisible">00000000</div>
       <div class="hex-values">
@@ -7,7 +12,7 @@ export const MemoryViewerComponent = {
       </div>
       <div class="ascii-values">Decoded Text</div>
     </div>
-    <div class="memory-viewer" ng-repeat="line in $ctrl.memory track by $index" ng-init="lineIndex=$index">
+    <div class="memory-row" ng-repeat="line in $ctrl.memory track by $index" ng-init="lineIndex=$index">
         <div class="address">
             {{($ctrl.address + lineIndex * 16).toString(16).toUpperCase().padStart(8, "0")}}
         </div>
@@ -43,6 +48,7 @@ export const MemoryViewerComponent = {
     selected = 0;
     hovered = 0;
     address = 0;
+    selectedMemType = 'rom';
 
     /**
      * @param {number} byte
@@ -126,13 +132,19 @@ export const MemoryViewerComponent = {
         ws.send(
           `memw 0x${(this.address + this.selected)
             .toString(16)
-            .toUpperCase()} ${value}`
+            .toUpperCase()} ${value} ${this.selectedMemType}`
         );
 
         if (this.selected + 1 < totalSize) {
           this.selected++;
         }
       }
+    }
+
+    selectMemType() {
+      /** @type {WebSocket} */
+      const ws = window["ws"];
+      ws.send(`mem 0 128 ${this.selectedMemType}`);
     }
   },
 };
