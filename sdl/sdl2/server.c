@@ -148,7 +148,7 @@ void onmessage(ws_cli_conn_t *client,
 		write_memory_byte(address, value);
 	}
 
-	// Format: "bpt add <address> <type>"
+	// Format: "bpt add <address> <type> (<condition: "value_equal">)"
 	if (strstr((const char *)msg, "bpt add ") == (const char *)msg)
 	{
 		strtok((char *)msg, " ");
@@ -156,7 +156,14 @@ void onmessage(ws_cli_conn_t *client,
 
 		uint32_t address = read_number_token();
 		uint16_t type = read_number_token();
-		add_bpt(type, address, 1);
+
+		char* condition_provided = strtok(NULL, " ");
+		uint32_t value_equal_num;
+		if (condition_provided != NULL) {
+			value_equal_num = strtol(condition_provided, NULL, 0);
+		}
+		
+		add_bpt(type, address, 1, condition_provided != NULL, value_equal_num);
 	}
 
 	// Format: "bpt clear_all"

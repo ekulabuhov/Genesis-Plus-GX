@@ -25,9 +25,11 @@ typedef struct breakpoint_s {
     int width;
     hook_type_t type;
     unsigned int address;
+    int condition_provided;
+    unsigned int value_equal;
 } breakpoint_t;
 
-breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width);
+breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width, int condition_provided, unsigned int value_equal);
 
 void clear_bpt_list();
 

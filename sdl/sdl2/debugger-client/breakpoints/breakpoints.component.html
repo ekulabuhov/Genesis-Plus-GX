@@ -18,9 +18,10 @@
       <tr>
         <th scope="col">#</th>
         <th scope="col" style="width: 130px">Address</th>
+        <th scope="col" style="width: 130px">Type</th>
         <th scope="col">Condition</th>
         <th scope="col" style="width: 240px">Comment</th>
-        <th scope="col"></th>
+        <th scope="col" style="width: 87px"></th>
       </tr>
     </thead>
     <tbody>
@@ -41,6 +42,15 @@
           />
         </td>
         <td>
+          <select class="form-select form-select-sm" ng-model="bpt.type">
+            <option>ROM</option>
+            <option>VRAM</option>
+            <option>CRAM</option>
+          </select>
+        </td>
+        <!-- Edit Condition column -->
+        <td>
+          <!-- Read/Write/Execute checkboxes -->
           <div style="display: flex; margin-top: 3px">
             <div class="form-check form-check-inline">
               <input
@@ -74,6 +84,10 @@
               >
             </div>
           </div>
+          <div ng-if="bpt.write" class="input-group input-group-sm my-2">
+            <span class="input-group-text" id="basic-addon1">Write value</span>
+            <input type="text" ng-model="bpt.value_equal"  class="form-control" placeholder="0x00" aria-describedby="basic-addon1">
+          </div>
         </td>
         <td>
           <input
@@ -101,14 +115,17 @@
             <i class="bi bi-check-lg"></i>
           </button>
 
+          <!-- Disabling delete if there's some data. TODO: implement discard changes. -->
           <button
             class="btn btn-sm btn-dark"
             ng-click="$ctrl.onBptDelete($index)"
+            ng-disabled="bpt.address"
           >
             <i class="bi bi-x-lg"></i>
           </button>
         </td>
 
+        <!-- Breakpoint view mode -->
         <td ng-if-start="!bpt.edit">
           <input
             class="form-check-input"
@@ -118,8 +135,9 @@
           />
         </td>
         <td>{{ bpt.address }}</td>
+        <td>{{ bpt.type }}</td>
         <td>
-          {{ bpt.read ? "Read" : "" }} {{ bpt.write ? "Write" : "" }}
+          {{ bpt.read ? "Read" : "" }} {{ bpt.write ? "Write" : "" }} {{ bpt.write && bpt.value_equal ? "(" + bpt.value_equal + ")" : "" }}
           {{ bpt.execute ? "Execute" : "" }}
         </td>
         <td>{{ bpt.comment }}</td>

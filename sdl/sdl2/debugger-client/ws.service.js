@@ -14,14 +14,26 @@ export class WsService {
     }
 
     if (bpt.read) {
-      type |= 2;
+      if (!bpt.type || bpt.type === 'ROM') {
+        type |= 2;
+      } else if (bpt.type === 'VRAM') {
+        type |= 8;
+      } else if (bpt.type === 'CRAM') {
+        type |= 32;
+      }
     }
 
     if (bpt.write) {
-      type |= 4;
+      if (!bpt.type || bpt.type === 'ROM') {
+        type |= 4;
+      } else if (bpt.type === 'VRAM') {
+        type |= 16;
+      } else if (bpt.type === 'CRAM') {
+        type |= 64;
+      }
     }
 
-    this.ws.send(`bpt add ${bpt.address} ${type}`);
+    this.ws.send(`bpt add ${bpt.address} ${type} ${bpt.value_equal}`);
   }
 
   static syncBreakpoints() {

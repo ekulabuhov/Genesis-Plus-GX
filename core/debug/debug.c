@@ -30,7 +30,7 @@ void (*debug_hook)(dbg_event_t type) = NULL;
 
 static breakpoint_t *first_bp = NULL;
 
-breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width)
+breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width, int condition_provided, unsigned int value_equal)
 {
     breakpoint_t *bp = (breakpoint_t *)malloc(sizeof(breakpoint_t));
 
@@ -38,6 +38,9 @@ breakpoint_t *add_bpt(hook_type_t type, unsigned int address, int width)
     bp->address = address;
     bp->width = width;
     bp->enabled = 1;
+
+    bp->condition_provided = condition_provided;
+    bp->value_equal = value_equal;
 
     if (first_bp)
     {
@@ -87,6 +90,12 @@ void clear_bpt_list()
         delete_breakpoint(first_bp);
 }
 
+unsigned short cram_9b_to_16b(unsigned short data)
+{
+    /* Unpack 9-bit CRAM data (BBBGGGRRR) to 16-bit data (BBB0GGG0RRR0) */
+    return (unsigned short)(((data & 0x1C0) << 3) | ((data & 0x038) << 2) | ((data & 0x007) << 1));
+}
+
 void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
     breakpoint_t *bp;
@@ -94,8 +103,29 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
     {
         if (!(bp->type & type) || !bp->enabled)
             continue;
+
+        if (type == HOOK_CRAM_W) {
+            value = cram_9b_to_16b(value);
+
+            // CRAM writes are always 2 bytes at the time
+            // If we're monitoring odd address - compare second byte only
+            if (bp->width == 1 && bp->address % 2) {
+                value = value & 0xFF;
+            }
+
+            printf("cram write to address %u, width: %d, value: %u\n", address, width, value);
+        }
+
+        if (type == HOOK_M68K_W) {
+            printf("ram write to address %u, width: %d, value: %u\n", address, width, value);
+        }
+ 
+        if (bp->condition_provided && bp->value_equal != value) 
+            continue;
+
         if ((address <= (bp->address + bp->width)) && ((address + width) >= bp->address))
         {
+            printf("breakpoint hit at addr: %u, type: %u\n", address, type);
             dbg_paused = 1;
             break;
         }
@@ -152,12 +182,6 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
 void set_debug_hook(void (*hook)(dbg_event_t type))
 {
     debug_hook = hook;
-}
-
-unsigned short cram_9b_to_16b(unsigned short data)
-{
-    /* Unpack 9-bit CRAM data (BBBGGGRRR) to 16-bit data (BBB0GGG0RRR0) */
-    return (unsigned short)(((data & 0x1C0) << 3) | ((data & 0x038) << 2) | ((data & 0x007) << 1));
 }
 
 static unsigned char read_cram_byte(unsigned char *array, unsigned int addr)

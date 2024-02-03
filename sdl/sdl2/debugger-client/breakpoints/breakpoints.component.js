@@ -5,9 +5,14 @@
  * write: boolean; 
  * address: string; 
  * enabled: boolean; 
+ * type: 'ROM' | 'VRAM' | 'CRAM';
+ * value_equal: string;
  * }>} Breakpoint */
 
 import { WsService } from "../ws.service.js";
+
+/** @type {Breakpoint} */
+const defaultBreakpoint = { edit: true, enabled: true, type: "ROM" };
 
 export const BreakpointsComponent = {
   templateUrl: 'breakpoints/breakpoints.component.html',
@@ -20,7 +25,7 @@ export const BreakpointsComponent = {
     get breakpoints() {
       if (!this._breakpoints) {
         this._breakpoints = JSON.parse(localStorage.getItem("breakpoints")) || [
-          { edit: true, enabled: true },
+          defaultBreakpoint
         ];
       }
       return this._breakpoints;
@@ -28,7 +33,7 @@ export const BreakpointsComponent = {
 
     set breakpoints(value) {
       if (value.length === 0) {
-        value.push({ edit: true, enabled: true });
+        value.push(defaultBreakpoint);
       }
       this._breakpoints = value;
       localStorage.setItem("breakpoints", JSON.stringify(value));
@@ -44,7 +49,7 @@ export const BreakpointsComponent = {
     }
 
     onBptAdd() {
-      this.breakpoints = this.breakpoints.concat([{ edit: true, enabled: true }]);
+      this.breakpoints = this.breakpoints.concat([defaultBreakpoint]);
     }
 
     /**
@@ -54,8 +59,10 @@ export const BreakpointsComponent = {
     onBptSubmit(bpt, index) {
       bpt.edit = false;
       if (!bpt.address.toLowerCase().startsWith('0x')) {
-        bpt.address = '0x' + bpt.address.toUpperCase();
+        bpt.address = '0x' + bpt.address;
       }
+
+      bpt.address = bpt.address.toUpperCase();
 
       this.breakpoints = Object.assign([], this.breakpoints, { [index]: bpt });
 
