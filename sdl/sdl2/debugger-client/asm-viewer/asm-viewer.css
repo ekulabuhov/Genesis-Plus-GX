@@ -2,6 +2,11 @@
   color: #569cd6;
 }
 
+.bytes {
+  display: inline-block;
+  width: 250px;
+}
+
 .mnemonic {
   color: #dcdcaa;
   width: 90px;

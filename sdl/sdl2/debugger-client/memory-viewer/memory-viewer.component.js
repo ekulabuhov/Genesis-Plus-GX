@@ -39,16 +39,36 @@ export const MemoryViewerComponent = {
     </div>
     `,
   bindings: {
+    // Two dimensional array row_count x 16 bytes
     memory: "<",
+    // Starting address
     address: "<",
+    // 'rom' | 'vram' | 'cram'
+    memType: "<",
+    selected: "<",
   },
   controller: class MemoryViewerController {
     /** @type {number[][]} */
     memory;
+    // Offset from address
     selected = 0;
-    hovered = 0;
+    hovered;
     address = 0;
-    selectedMemType = 'rom';
+    selectedMemType = "rom";
+
+    /**
+     * @param {import("angular").IAugmentedJQuery} $element
+     */
+    constructor($element, $scope) {
+      $element.on("mouseleave", () => {
+        this.hovered = undefined;
+        $scope.$apply();
+      });
+    }
+
+    set memType(value) {
+      this.selectedMemType = value;
+    }
 
     /**
      * @param {number} byte

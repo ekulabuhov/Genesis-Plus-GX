@@ -45,17 +45,26 @@ int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **
         size_t j;
         for (j = 0; j < count; j++)
         {
+            char *bytesAsString = malloc(20);
+            int charsWritten = 0;
+            for (size_t i = 0; i < insn[j].size; i++)
+            {
+                charsWritten += sprintf(bytesAsString + charsWritten, "%02X ", insn[j].bytes[i]);
+            }
+            bytesAsString[charsWritten - 1] = 0;
+
             cs_detail *detail = insn[j].detail;
-            printf("0x%" PRIx64 ":\t%s\t\t%s\n", insn[j].address, insn[j].mnemonic,
+            printf("0x%" PRIx64 ":\t%s\t%s\t\t%s\n", insn[j].address, bytesAsString, insn[j].mnemonic,
                    insn[j].op_str);
 
             char *lastChar = (j + 1 == count) ? "]}" : ",";
 
             sprintf(*message + strlen(*message), "{ "
                                                  "\"address\": %u,"
+                                                 "\"bytes\": \"%s\","
                                                  "\"mnemonic\": \"%s\","
                                                  "\"op_str\": \"%s\" }%s\n",
-                    insn[j].address, insn[j].mnemonic, insn[j].op_str, lastChar);
+                    insn[j].address, bytesAsString, insn[j].mnemonic, insn[j].op_str, lastChar);
         }
 
         cs_free(insn, count);

@@ -1,3 +1,5 @@
+import { displayHex } from "../utils.js";
+
 export const RegisterViewerComponent = {
   template: `
     <div class="col">
@@ -41,14 +43,10 @@ export const RegisterViewerComponent = {
           >
         </li>
       </ul>
-    </div>
-    <div class="dropdown">
-      <ul class="dropdown-menu" data-bs-toggle="dropdown">
-        <li ng-repeat="menu in $ctrl.menu" ng-click="menu.click()"><a class="dropdown-item" href="#">{{menu.label}}</a></li>
-      </ul>
     </div>`,
   bindings: {
     regs: "<",
+    onViewMemory: "&"
   },
   controller: class RegisterViewerController {
     regLabels = [
@@ -79,7 +77,14 @@ export const RegisterViewerComponent = {
       "SR",
       "SP",
     ];
-    menu = [];
+    /** @type {import('../menu/menu.service').MenuService}*/
+    menuService;
+    /** @type {(data: { address: string; type: string; }) => void} */
+    onViewMemory;
+
+    constructor(menuService) {
+      this.menuService = menuService;
+    }
 
     $onChanges(changesObj) {
       if (changesObj["regs"].currentValue) {
@@ -111,20 +116,6 @@ export const RegisterViewerComponent = {
 
       regVal = regVal < 0 ? 0x100000000 + regVal : regVal;
       return "0x" + regVal.toString(16).toUpperCase().padStart(8, "0");
-    }
-
-    displayHex(val, size) {
-      if (val === undefined) {
-        return;
-      }
-
-      let slice = 0;
-      if (size === "w") {
-        slice = -4;
-      }
-
-      val = val < 0 ? 0x100000000 + val : val;
-      return "$" + val.toString(16).toUpperCase().slice(slice);
     }
 
     onFlagChange() {
@@ -159,49 +150,18 @@ export const RegisterViewerComponent = {
 
       event.preventDefault();
 
-      const menu = document.querySelector("register-viewer .dropdown-menu");
-      const dropdown = bootstrap.Dropdown.getInstance(menu);
-      if (dropdown) {
-        dropdown.hide();
-      }
-      
-      const mouseReference = {
-        getBoundingClientRect: () => {
-          const x = event.clientX;
-          const y = event.clientY;
-          return {
-            width: 0,
-            height: 0,
-            top: y,
-            right: x,
-            bottom: y,
-            left: x,
-          };
-        },
-      };
-
-      this.menu = [
+      const menu = [
         {
-          label: `View in memory viewer (${this.displayHex(
+          label: `View in memory viewer (${displayHex(
             this.regs[reg.toLowerCase()]
           )})`,
           click: () => {
-            const ws = window["ws"];
-            // It's a display val (e.g. 0x00C00004)
-            let val = this.regs[reg];
-            // Replace last char with zero as control is zero based
-            val = val.slice(0, val.length - 1) + "0";
-            ws.send(`mem ${val} 128`);
+            this.onViewMemory({ address: this.regs[reg], type: 'rom' });
           },
         },
       ];
 
-      new bootstrap.Dropdown(menu, {
-        // reference: e.target
-        reference: mouseReference,
-      }).show();
-
-      return;
+      this.menuService.showMenu(event, menu);
     }
   },
 };

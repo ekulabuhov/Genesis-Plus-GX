@@ -9,6 +9,8 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
 jmp_buf jmp_env;
 int dbg_trace;
 int dbg_in_interrupt;
+// Can be toggled on and off from client
+int break_in_interrupt;
 
 typedef enum {
 	DBG_STEP = 0

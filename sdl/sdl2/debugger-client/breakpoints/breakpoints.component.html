@@ -26,6 +26,7 @@
     </thead>
     <tbody>
       <tr ng-repeat="bpt in $ctrl.breakpoints track by $index">
+        <!-- Edit mode -->
         <td ng-if-start="bpt.edit">
           <input
             class="form-check-input"
@@ -86,7 +87,13 @@
           </div>
           <div ng-if="bpt.write" class="input-group input-group-sm my-2">
             <span class="input-group-text" id="basic-addon1">Write value</span>
-            <input type="text" ng-model="bpt.value_equal"  class="form-control" placeholder="0x00" aria-describedby="basic-addon1">
+            <input
+              type="text"
+              ng-model="bpt.value_equal"
+              class="form-control"
+              placeholder="0x00"
+              aria-describedby="basic-addon1"
+            />
           </div>
         </td>
         <td>
@@ -134,10 +141,16 @@
             ng-change="$ctrl.onEnableChange($index)"
           />
         </td>
-        <td>{{ bpt.address }}</td>
-        <td>{{ bpt.type }}</td>
+        <td
+          ng-mousedown="$ctrl.onAddressClick($event, bpt)"
+          oncontextmenu="return false"
+        >
+          {{ bpt.address }}
+        </td>
+        <td>{{ bpt.type.toUpperCase() }}</td>
         <td>
-          {{ bpt.read ? "Read" : "" }} {{ bpt.write ? "Write" : "" }} {{ bpt.write && bpt.value_equal ? "(" + bpt.value_equal + ")" : "" }}
+          {{ bpt.read ? "Read" : "" }} {{ bpt.write ? "Write" : "" }}
+          {{ bpt.write && bpt.value_equal ? "(" + bpt.value_equal + ")" : "" }}
           {{ bpt.execute ? "Execute" : "" }}
         </td>
         <td>{{ bpt.comment }}</td>

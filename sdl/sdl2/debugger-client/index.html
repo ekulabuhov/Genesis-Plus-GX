@@ -7,8 +7,8 @@
       integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
       crossorigin="anonymous"
     />
-    <link rel="stylesheet" href="bootstrap-icons.min.css">
-    <script src="angular.min.js"></script>
+    <link rel="stylesheet" href="bootstrap-icons.min.css" />
+    <script src="angular.js"></script>
     <script src="bootstrap.bundle.min.js"></script>
     <link href="memory-viewer/memory-viewer.css" rel="stylesheet" />
     <link href="asm-viewer/asm-viewer.css" rel="stylesheet" />
@@ -18,41 +18,115 @@
   <body class="container-fluid p-3" ng-controller="RegController as $ctrl">
     <div class="row">
       <div class="col" id="header">
-        <h1 align="left">Debugger</h1>
-        Server:
-        <input type="text" id="txtServer" value="ws://localhost:8080" />
-        <input
-          type="button"
-          id="btConn"
-          name="btConn"
-          ng-value="$ctrl.btConnValue"
-          ng-click="$ctrl.onConnectClick()"
-        /><br /><br />
-        Message:
-        <input
-          type="text"
-          id="txtMsg"
-          ng-model="$ctrl.userMessage"
-          placeholder="Type your message (ENTER to send)"
-        />
-        <input
-          type="button"
-          ng-disabled="!$ctrl.userMessage"
-          id="btMsg"
-          name="btMsg"
-          value="Send"
-          ng-click="$ctrl.onSendClick()"
-        />
-        <input class="mb-3" type="button" value="Step" title="F10" onclick="ws.send('step')" />
-        <input class="mb-3" type="button" value="Run" title="F5" onclick="ws.send('run')" />
-        <asm-viewer regs="$ctrl.regs" asm="$ctrl.asm"></asm-viewer>
+        <h1>Debugger</h1>
+        <div class="d-flex justify-content-between mb-3">
+          <!-- Server and message -->
+          <div class="d-flex flex-wrap gap-2">
+            <div>
+              Server:
+              <input type="text" id="txtServer" value="ws://localhost:8080" />
+              <input
+                type="button"
+                id="btConn"
+                name="btConn"
+                ng-value="$ctrl.btConnValue"
+                ng-click="$ctrl.onConnectClick()"
+              />
+            </div>
+            <div>
+              Message:
+              <input
+                type="text"
+                id="txtMsg"
+                ng-model="$ctrl.userMessage"
+                placeholder="Type your message (ENTER to send)"
+              />
+              <input
+                type="button"
+                ng-disabled="!$ctrl.userMessage"
+                id="btMsg"
+                name="btMsg"
+                value="Send"
+                ng-click="$ctrl.onSendClick()"
+              />
+              <input
+                type="button"
+                value="Step"
+                title="F10"
+                onclick="ws.send('step')"
+                ng-disabled="$ctrl.isRunning"
+              />
+              <input
+                type="button"
+                value="Run"
+                title="F5"
+                ng-click="$ctrl.onRunClick()"
+                ng-disabled="$ctrl.isRunning"
+              />
+              <input
+                type="button"
+                value="Reset"
+                onclick="ws.send('reset')"
+                ng-disabled="$ctrl.isRunning"
+              />
+            </div>
+          </div>
+          <!-- Settings -->
+          <div class="align-content-start d-flex flex-wrap justify-content-end">
+            <div class="form-check">
+              <input
+                ng-model="$ctrl.showByteCode"
+                class="form-check-input"
+                type="checkbox"
+                id="showByteCode"
+              />
+              <label class="form-check-label" for="showByteCode">
+                Show byte code
+              </label>
+            </div>
+            <div class="form-check">
+              <input
+                ng-model="$ctrl.breakInInterrupts"
+                class="form-check-input"
+                type="checkbox"
+                id="breakInInterrupts"
+                ng-change="$ctrl.onBreakInInterruptsChange()"
+              />
+              <label class="form-check-label" for="breakInInterrupts">
+                Break in interrupts
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <asm-viewer
+          regs="$ctrl.regs"
+          asm="$ctrl.asm"
+          show-bytes="$ctrl.showByteCode"
+        ></asm-viewer>
       </div>
       <div class="col reg-window">
-        <register-viewer regs="$ctrl.regs" class="row"></register-viewer>
-        <breakpoints></breakpoints>
-        <memory-viewer memory="$ctrl.memory" address="$ctrl.address" class="font-monospace"></memory-viewer>
+        <register-viewer
+          regs="$ctrl.regs"
+          on-view-memory="$ctrl.viewMemory(address, type)"
+          class="row"
+        ></register-viewer>
+
+        <breakpoints
+          on-view-memory="$ctrl.viewMemory(address, type)"
+        ></breakpoints>
+
+        <memory-viewer
+          memory="$ctrl.memory"
+          address="$ctrl.address"
+          mem-type="$ctrl.memType"
+          selected="$ctrl.memSelectedOffset"
+          class="font-monospace"
+        ></memory-viewer>
+
         <sprite-viewer vram="$ctrl.vram" cram="$ctrl.cram"></sprite-viewer>
       </div>
     </div>
+    <app-menu></app-menu>
   </body>
 </html>

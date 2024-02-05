@@ -1,31 +1,41 @@
-/** @typedef {Partial<{ 
- * edit: boolean; 
- * execute: boolean; 
- * read: boolean; 
- * write: boolean; 
- * address: string; 
- * enabled: boolean; 
- * type: 'ROM' | 'VRAM' | 'CRAM';
+/** @typedef {Partial<{
+ * edit: boolean;
+ * execute: boolean;
+ * read: boolean;
+ * write: boolean;
+ * address: string;
+ * enabled: boolean;
+ * type: 'rom' | 'vram' | 'cram';
  * value_equal: string;
  * }>} Breakpoint */
 
 import { WsService } from "../ws.service.js";
 
 /** @type {Breakpoint} */
-const defaultBreakpoint = { edit: true, enabled: true, type: "ROM" };
+const defaultBreakpoint = { edit: true, enabled: true, type: "rom" };
 
 export const BreakpointsComponent = {
-  templateUrl: 'breakpoints/breakpoints.component.html',
+  bindings: {
+    onViewMemory: "&",
+  },
+  templateUrl: "breakpoints/breakpoints.component.html",
   controller: class BreakpointsController {
+    /** @type {Breakpoint[]} */
     _breakpoints;
+    /** @type {import("../menu/menu.service.js").MenuService} */
+    menuService;
+    /** @type {(data: { address: string; type: string; }) => void} */
+    onViewMemory;
 
-    /**
-     * @type {Breakpoint[]}
-     */
+    constructor(menuService) {
+      this.menuService = menuService;
+    }
+
+    /** @type {Breakpoint[]} */
     get breakpoints() {
       if (!this._breakpoints) {
         this._breakpoints = JSON.parse(localStorage.getItem("breakpoints")) || [
-          defaultBreakpoint
+          defaultBreakpoint,
         ];
       }
       return this._breakpoints;
@@ -58,11 +68,12 @@ export const BreakpointsComponent = {
      */
     onBptSubmit(bpt, index) {
       bpt.edit = false;
-      if (!bpt.address.toLowerCase().startsWith('0x')) {
-        bpt.address = '0x' + bpt.address;
+      if (!bpt.address.toLowerCase().startsWith("0x")) {
+        bpt.address = "0x" + bpt.address.toUpperCase();
+      } else {
+        bpt.address =
+          "0x" + bpt.address.toLowerCase().split("x")[1].toUpperCase();
       }
-
-      bpt.address = bpt.address.toUpperCase();
 
       this.breakpoints = Object.assign([], this.breakpoints, { [index]: bpt });
 
@@ -72,6 +83,30 @@ export const BreakpointsComponent = {
     onEnableChange(index) {
       this.breakpoints = this.breakpoints.concat();
       WsService.syncBreakpoints();
+    }
+
+    /**
+     * @param {MouseEvent} event
+     * @param {Breakpoint} bpt
+     */
+    onAddressClick(event, bpt) {
+      if (event.which !== 3) {
+        return;
+      }
+
+      event.preventDefault();
+
+      this.menuService.showMenu(event, [
+        {
+          label: `View in memory viewer (${bpt.address})`,
+          click: () => {
+            this.onViewMemory({
+              address: bpt.address,
+              type: bpt.type.toLowerCase(),
+            });
+          },
+        },
+      ]);
     }
   },
 };

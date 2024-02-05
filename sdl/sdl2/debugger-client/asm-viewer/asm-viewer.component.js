@@ -1,3 +1,5 @@
+import { displayHex } from "../utils.js";
+
 export const AsmViewerComponent = {
   template: `
     <div class="disasm-window overflow-y-scroll" style="position: relative">
@@ -13,10 +15,13 @@ export const AsmViewerComponent = {
             ></div>
         </div>
         <div class="code-listing">
-            <div ng-repeat="pa in $ctrl.asm">
+            <div class="code-row" ng-repeat="pa in $ctrl.asm">
                 <span class="addr">
-                    0x{{pa.address.toString(16)}}
-                </span>:
+                    0x{{pa.address.toString(16)}}:
+                </span>
+                <span ng-if="$ctrl.showBytes" class="bytes">
+                    {{pa.bytes}}
+                </span>
                 <span class="mnemonic" ng-mouseover="$ctrl.displayTooltip($event, pa.mnemonic)">
                     {{pa.mnemonic}}
                 </span>
@@ -32,9 +37,14 @@ export const AsmViewerComponent = {
   bindings: {
     regs: "<",
     asm: "<",
+    showBytes: "<"
   },
   controller: class AsmViewerController {
-    /** @type {{address: number; mnemonic: string; op_str: string; }[]} asm */
+    /** 
+     * @type {{ address: number; mnemonic: string; op_str: string; explain: string; valTooltip: string }[]} asm 
+     * @prop {string} explain - is used to add context to executed instruction, e.g. explain type of VDP operation
+     * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
+    */
     asm = [];
     debugLineTop = 0;
     branchLineTop = 0;
@@ -46,20 +56,6 @@ export const AsmViewerComponent = {
       if (changesObj["regs"]?.currentValue || changesObj["asm"]?.currentValue) {
         this.refresh();
       }
-    }
-
-    displayHex(val, size) {
-      if (val === undefined) {
-        return;
-      }
-
-      let slice = 0;
-      if (size === 'w') {
-        slice = -4;
-      }
-
-      val = val < 0 ? 0x100000000 + val : val;
-      return "$" + val.toString(16).toUpperCase().slice(slice);
     }
 
     refresh() {
@@ -90,7 +86,7 @@ export const AsmViewerComponent = {
         }
 
         if (fromValue && toValue) {
-          instr.explain = `${operands[1]}=${this.displayHex(fromValue + toValue)}`;
+          instr.explain = `${operands[1]}=${displayHex(fromValue + toValue)}`;
         }
       }
 
@@ -107,7 +103,7 @@ export const AsmViewerComponent = {
         }
 
         if (fromValue !== undefined && toValue !== undefined) {
-          instr.explain = `${this.displayHex(toValue)}=${this.displayHex(fromValue, instr.mnemonic.split(".")[1])}`;
+          instr.explain = `${displayHex(toValue)}=${displayHex(fromValue, instr.mnemonic.split(".")[1])}`;
 
           if (toValue === 0xC00004) {
             if ((fromValue & 0xFF00) === 0x8100) {

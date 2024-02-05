@@ -14,8 +14,11 @@
 #include "main.h"
 #include "debug.h"
 
+// To access system_reset()
+#include "shared.h"
+
 char *regs_as_json();
-char *read_memory_as_json(uint32_t address, uint16_t size, char* type);
+char *read_memory_as_json(uint32_t address, uint16_t size, char *type);
 uint32_t read_number_token();
 
 /**
@@ -126,6 +129,22 @@ void onmessage(ws_cli_conn_t *client,
 		pause_emu = 0;
 	}
 
+	if (strcmp((const char *)msg, "reset") == 0)
+	{
+		system_reset();
+		message = regs_as_json();
+	}
+
+	if (strcmp((const char *)msg, "enable break_in_interrupts") == 0)
+	{
+		break_in_interrupt = 1;
+	}
+
+	if (strcmp((const char *)msg, "disable break_in_interrupts") == 0)
+	{
+		break_in_interrupt = 0;
+	}
+
 	// Format: "mem <address> <size> (<type: "vram" | "cram">)"
 	if (strstr((const char *)msg, "mem ") == (const char *)msg)
 	{
@@ -133,7 +152,7 @@ void onmessage(ws_cli_conn_t *client,
 
 		uint32_t address = read_number_token();
 		uint16_t size = atoi(strtok(NULL, " "));
-		char* type = strtok(NULL, " ");
+		char *type = strtok(NULL, " ");
 		message = read_memory_as_json(address, size, type);
 		printf("reading addr: %u, with size: %d, val: %s\n", address, size, message);
 	}
@@ -157,12 +176,13 @@ void onmessage(ws_cli_conn_t *client,
 		uint32_t address = read_number_token();
 		uint16_t type = read_number_token();
 
-		char* condition_provided = strtok(NULL, " ");
+		char *condition_provided = strtok(NULL, " ");
 		uint32_t value_equal_num;
-		if (condition_provided != NULL) {
+		if (condition_provided != NULL)
+		{
 			value_equal_num = strtol(condition_provided, NULL, 0);
 		}
-		
+
 		add_bpt(type, address, 1, condition_provided != NULL, value_equal_num);
 	}
 
@@ -179,7 +199,7 @@ void onmessage(ws_cli_conn_t *client,
 }
 
 /**
- * Reads next token in space separated line. Convert it to number. 
+ * Reads next token in space separated line. Convert it to number.
  * Supports hexadecimal values prepended by 0x.
  */
 uint32_t read_number_token()
@@ -247,12 +267,13 @@ char *regs_as_json()
 	return message;
 }
 
-char *read_memory_as_json(uint32_t address, uint16_t size, char* type)
+char *read_memory_as_json(uint32_t address, uint16_t size, char *type)
 {
 	// Each byte representation is 3 digits max (e.g. 255) plus 1 byte for comma, plus some extra bytes for template
 	char *result = malloc(size * 4 + 100);
 	char *template = "{ \"type\": \"mem\", \"mem_type\": \"%s\", \"address\": %u, \"data\": [";
-	if (type == NULL) {
+	if (type == NULL)
+	{
 		type = "rom";
 	}
 	char *pos = result + sprintf(result, template, type, address);

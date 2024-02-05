@@ -14,26 +14,26 @@ export class WsService {
     }
 
     if (bpt.read) {
-      if (!bpt.type || bpt.type === 'ROM') {
+      if (!bpt.type || bpt.type === "rom") {
         type |= 2;
-      } else if (bpt.type === 'VRAM') {
+      } else if (bpt.type === "vram") {
         type |= 8;
-      } else if (bpt.type === 'CRAM') {
+      } else if (bpt.type === "cram") {
         type |= 32;
       }
     }
 
     if (bpt.write) {
-      if (!bpt.type || bpt.type === 'ROM') {
+      if (!bpt.type || bpt.type === "rom") {
         type |= 4;
-      } else if (bpt.type === 'VRAM') {
+      } else if (bpt.type === "vram") {
         type |= 16;
-      } else if (bpt.type === 'CRAM') {
+      } else if (bpt.type === "cram") {
         type |= 64;
       }
     }
 
-    this.ws.send(`bpt add ${bpt.address} ${type} ${bpt.value_equal}`);
+    this.ws.send(`bpt add ${bpt.address} ${type} ${bpt.value_equal ?? ''}`);
   }
 
   static syncBreakpoints() {
@@ -49,5 +49,15 @@ export class WsService {
         breakpoints.forEach((bpt) => this.sendBreakpoint(bpt));
       }
     }
+  }
+
+  /**
+   * @param {string} address
+   * @param {'rom' | 'vram' | 'cram'} [type]
+   */
+  static showMemoryLocation(address, type) {
+    // Replace last char with zero as control is zero based
+    address = address.slice(0, address.length - 1) + "0";
+    this.ws.send(`mem ${address} 128 ${type}`);
   }
 }

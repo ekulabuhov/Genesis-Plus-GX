@@ -104,23 +104,26 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
         if (!(bp->type & type) || !bp->enabled)
             continue;
 
-        if (type == HOOK_CRAM_W) {
+        if (type == HOOK_CRAM_W)
+        {
             value = cram_9b_to_16b(value);
 
             // CRAM writes are always 2 bytes at the time
             // If we're monitoring odd address - compare second byte only
-            if (bp->width == 1 && bp->address % 2) {
+            if (bp->width == 1 && bp->address % 2)
+            {
                 value = value & 0xFF;
             }
 
             printf("cram write to address %u, width: %d, value: %u\n", address, width, value);
         }
 
-        if (type == HOOK_M68K_W) {
+        if (type == HOOK_M68K_W)
+        {
             printf("ram write to address %u, width: %d, value: %u\n", address, width, value);
         }
- 
-        if (bp->condition_provided && bp->value_equal != value) 
+
+        if (bp->condition_provided && bp->value_equal != value)
             continue;
 
         if ((address <= (bp->address + bp->width)) && ((address + width) >= bp->address))
@@ -137,7 +140,16 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
     switch (type)
     {
     case HOOK_M68K_E:
-        if (dbg_in_interrupt)
+    {
+        unsigned short opc = m68k_read_immediate_16(m68k.prev_pc);
+        // Check for JSR
+        if ((opc >> 6) == 314)
+        {
+            printf("jump to subroutine from %04X to %04X\n", m68k.prev_pc, m68k.pc);
+        }
+    }
+
+        if (dbg_in_interrupt && !break_in_interrupt)
         {
             unsigned int pc = REG_PC;
             unsigned short opc = m68k_read_immediate_16(pc);
