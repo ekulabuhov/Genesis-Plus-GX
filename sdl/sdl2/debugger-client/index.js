@@ -34,7 +34,7 @@ appModule.controller(
     connected = false;
     userMessage = "";
     /** @type {regs} */
-    regs = {};
+    regs;
     asm = [];
     $scope;
     memory = [
@@ -93,6 +93,7 @@ appModule.controller(
 
         if (response.type === "asm") {
           this.asm = response.data;
+          this.firstInstructionIndex = response.index;
         }
 
         if (response.type === "mem") {

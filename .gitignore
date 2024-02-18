@@ -21,3 +21,7 @@ sdl/capstone.dSYM/
 *.srm
 sdl/sdl2/debugger-client/node_modules/
 .DS_Store
+.idea/
+.vscode/
+*.sqlite3
+sdl/rom_analyzer

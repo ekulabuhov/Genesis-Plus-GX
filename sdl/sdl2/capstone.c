@@ -3,6 +3,7 @@
 
 #include <capstone/capstone.h>
 #include "debug.h"
+#include <sqlite3.h>
 
 int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **message);
 void disasm_rom_as_json(uint32_t address, uint16_t length, char **jsonOut);
@@ -23,7 +24,7 @@ void disasm_rom_as_json(uint32_t address, uint16_t length, char **jsonOut)
     disasm_as_json(romBytes, address, length, jsonOut);
 }
 
-int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **message)
+int disasm_as_json_x(const uint8_t *code, uint32_t address, size_t length, char **message)
 {
     csh handle;
     cs_insn *insn;
@@ -75,4 +76,77 @@ int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **
     cs_close(&handle);
 
     return 0;
+}
+
+int first_index = 0;
+static int sql_callback(void *p, int argc, char **argv, char **azColName)
+{ 
+    char *lastChar = ",";
+    char **message = p;
+
+    if (!first_index) {
+        first_index = atoi(argv[1]);
+    }
+
+    sprintf(*message + strlen(*message), "{ "
+                                         "\"address\": %s,"
+                                         "\"mnemonic\": \"%s\","
+                                         "\"op_str\": \"%s\" }%s\n",
+            argv[2], argv[3], argv[4], lastChar);
+
+    return 0;
+}
+
+sqlite3 *db;
+char *zErrMsg = 0;
+
+void run_sql(char **message, const char *sql, ...)
+{
+    va_list arg;
+    va_start(arg, sql);
+    size_t needed = vsnprintf(NULL, 0, sql, arg);
+    char *sql_formatted = malloc(needed+1);
+    vsprintf(sql_formatted, sql, arg);
+    va_end(arg);
+
+    printf(sql_formatted);
+
+    int rc = sqlite3_exec(db, sql_formatted, sql_callback, message, &zErrMsg);
+    if (rc != SQLITE_OK)
+    {
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
+}
+
+int disasm_as_json(const uint8_t *code, uint32_t address, size_t length, char **message)
+{
+    if (db == NULL)
+    {
+        int rc = sqlite3_open("Dune - The Battle for Arrakis (U) [!].sqlite3", &db);
+        if (rc != SQLITE_OK)
+        {
+            printf("failed to open the db\n");
+            exit(1);
+        }
+    }
+
+    *message = malloc(15000);
+    sprintf(*message, "{ \"type\": \"asm\", \"data\": [\n");
+
+    first_index = 0;
+    run_sql(message, "WITH const as (select rowNum from (SELECT address, row_number() OVER (ORDER BY address) AS rowNum FROM instructions) t where t.address = %d)\
+    SELECT * FROM\
+    (SELECT\
+	    id,\
+	    row_number() OVER (ORDER BY address) AS rowNum,\
+	    address,\
+	    mnemonic,\
+	    op_str,\
+	    size\
+    FROM\
+	    instructions) t, const\
+    where t.rowNum >= const.rowNum - 100 and t.rowNum < const.rowNum + 100\n", address);
+
+    sprintf(*message + strlen(*message) - 2, "], \"index\": %d }", first_index);
 }

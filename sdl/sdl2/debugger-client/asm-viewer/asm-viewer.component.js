@@ -15,7 +15,7 @@ export const AsmViewerComponent = {
             ></div>
         </div>
         <div class="code-listing">
-            <div class="code-row" ng-repeat="pa in $ctrl.asm">
+            <div class="code-row" ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px">
                 <span class="addr">
                     0x{{pa.address.toString(16)}}:
                 </span>
@@ -37,33 +37,84 @@ export const AsmViewerComponent = {
   bindings: {
     regs: "<",
     asm: "<",
-    showBytes: "<"
+    showBytes: "<",
+    firstInstructionIndex: "<",
   },
   controller: class AsmViewerController {
-    /** 
-     * @type {{ address: number; mnemonic: string; op_str: string; explain: string; valTooltip: string }[]} asm 
+    /**
+     * @type {{ address: number; mnemonic: string; op_str: string; explain: string; valTooltip: string }[]} asm
      * @prop {string} explain - is used to add context to executed instruction, e.g. explain type of VDP operation
      * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
-    */
+     */
     asm = [];
     debugLineTop = 0;
     branchLineTop = 0;
     branchLineHeight = 0;
     /** @type {import("../index").regs} */
     regs;
+    firstInstructionIndex = 0;
+    stopScrollEvents = false;
+
+    constructor() {
+      /** @type {HTMLDivElement} */
+      const el = document.querySelector(".disasm-window");
+      el.onscroll = (e) => {
+        if (this.stopScrollEvents) {
+          return;
+        }
+
+        const firstTop = this.firstInstructionIndex * 24;
+        if (el.scrollTop < firstTop + el.clientHeight * 2) {
+          console.log("should load up");
+          this.stopScrollEvents = true;
+          const currentInstructionIdx = Math.ceil(
+            el.scrollTop / 24 - this.firstInstructionIndex
+          );
+          this.ws.send(`asm ${this.asm[currentInstructionIdx].address} 100`);
+        }
+
+        const lastTop = (this.firstInstructionIndex + this.asm.length) * 24;
+        if (el.scrollTop > lastTop - el.clientHeight * 3) {
+          console.log("should load down");
+          this.stopScrollEvents = true;
+          const currentInstructionIdx = Math.ceil(
+            el.scrollTop / 24 - this.firstInstructionIndex + 12
+          );
+          this.ws.send(`asm ${this.asm[currentInstructionIdx].address} 100`);
+        }
+      };
+    }
+
+    /** @type {WebSocket} */
+    get ws() {
+      return window["ws"];
+    }
 
     $onChanges(changesObj) {
-      if (changesObj["regs"]?.currentValue || changesObj["asm"]?.currentValue) {
+      if (changesObj["asm"]?.currentValue) {
+        if (this.stopScrollEvents) {
+          this.stopScrollEvents = false;
+        }
+
+        if (this.waitingForAsm) {
+          this.waitingForAsm = false;
+          this.refresh();
+        }
+      }
+
+      if (changesObj["regs"]?.currentValue) {
         this.refresh();
       }
     }
 
     refresh() {
-      if (!this.regs.pc) {
+      if (!this.regs?.pc) {
         return;
       }
 
       this.branchLineHeight = this.branchLineTop = undefined;
+
+      const el = document.querySelector(".disasm-window");
 
       const instr = this.asm.find((a) => a.address === this.regs.pc);
       if (!instr) {
@@ -71,8 +122,12 @@ export const AsmViewerComponent = {
         /** @type {WebSocket} */
         const ws = window["ws"];
         ws.send(`asm ${this.regs.pc} 100`);
+        this.waitingForAsm = true;
         return;
       }
+
+      const instrIndex = this.asm.indexOf(instr);
+      el.scroll(0, (instrIndex + this.firstInstructionIndex) * 24);
 
       if (instr.mnemonic.split(".")[0] === "add") {
         const operands = instr.op_str.split(", ");
@@ -103,130 +158,144 @@ export const AsmViewerComponent = {
         }
 
         if (fromValue !== undefined && toValue !== undefined) {
-          instr.explain = `${displayHex(toValue)}=${displayHex(fromValue, instr.mnemonic.split(".")[1])}`;
+          instr.explain = `${displayHex(toValue)}=${displayHex(
+            fromValue,
+            instr.mnemonic.split(".")[1]
+          )}`;
 
-          if (toValue === 0xC00004) {
-            if ((fromValue & 0xFF00) === 0x8100) {
-              instr.valTooltip = `mode set register #2\n\n`
+          if (toValue === 0xc00004) {
+            if ((fromValue & 0xff00) === 0x8100) {
+              instr.valTooltip = `mode set register #2\n\n`;
               const m2 = fromValue & 8;
               const m1 = fromValue & 16;
               const ie0 = fromValue & 32;
               const disp = fromValue & 64;
-              instr.valTooltip += `set vertical resolution to ${m2 ? '30' : '28'} tiles\n` 
-              instr.valTooltip += `${m1 ? 'allow' : 'forbid'} DMA operations\n` 
-              instr.valTooltip += `${ie0 ? 'enable' : 'disable'} vblank interrupt\n` 
-              instr.valTooltip += `${disp ? 'enable' : 'disable'} rendering\n` 
+              instr.valTooltip += `set vertical resolution to ${
+                m2 ? "30" : "28"
+              } tiles\n`;
+              instr.valTooltip += `${m1 ? "allow" : "forbid"} DMA operations\n`;
+              instr.valTooltip += `${
+                ie0 ? "enable" : "disable"
+              } vblank interrupt\n`;
+              instr.valTooltip += `${disp ? "enable" : "disable"} rendering\n`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8200) {
-              instr.valTooltip = `plane A table address (divided by $2000)`
+            if ((fromValue & 0xff00) === 0x8200) {
+              instr.valTooltip = `plane A table address (divided by $2000)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8300) {
-              instr.valTooltip = `window table base address (divided by $800). In H40 mode, WD11 must be 0.`
+            if ((fromValue & 0xff00) === 0x8300) {
+              instr.valTooltip = `window table base address (divided by $800). In H40 mode, WD11 must be 0.`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8400) {
-              instr.valTooltip = `plane B table base address (divided by $2000)`
+            if ((fromValue & 0xff00) === 0x8400) {
+              instr.valTooltip = `plane B table base address (divided by $2000)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8500) {
-              instr.valTooltip = `sprite table base address (divided by $200). In H40 mode, AT9 must be 0.`
+            if ((fromValue & 0xff00) === 0x8500) {
+              instr.valTooltip = `sprite table base address (divided by $200). In H40 mode, AT9 must be 0.`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8700) {
-              instr.valTooltip = `background color`
+            if ((fromValue & 0xff00) === 0x8700) {
+              instr.valTooltip = `background color`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8A00) {
-              instr.valTooltip = `hblank interrupt rate\n\nhow many lines to wait between hblank interrupts`
+            if ((fromValue & 0xff00) === 0x8a00) {
+              instr.valTooltip = `hblank interrupt rate\n\nhow many lines to wait between hblank interrupts`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8B00) {
-              instr.valTooltip = `mode set register #3`
+            if ((fromValue & 0xff00) === 0x8b00) {
+              instr.valTooltip = `mode set register #3`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8C00) {
-              instr.valTooltip = `mode set register #4\n\n`
+            if ((fromValue & 0xff00) === 0x8c00) {
+              instr.valTooltip = `mode set register #4\n\n`;
               const rs = fromValue & 0x81;
               const lsm = fromValue & 6;
               const ste = fromValue & 8;
 
-              instr.valTooltip += `horizontal resolution: ${rs === 0x81 ? 40 : 32} tiles\n`
-              instr.valTooltip += `${ste ? 'enable' : 'disable'} shadow/highlight\n`
-              instr.valTooltip += `${lsm ? 'interlaced mode' : 'no interlacing'}`
+              instr.valTooltip += `horizontal resolution: ${
+                rs === 0x81 ? 40 : 32
+              } tiles\n`;
+              instr.valTooltip += `${
+                ste ? "enable" : "disable"
+              } shadow/highlight\n`;
+              instr.valTooltip += `${
+                lsm ? "interlaced mode" : "no interlacing"
+              }`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8D00) {
-              instr.valTooltip = `hscroll table base address (divided by $400)`
+            if ((fromValue & 0xff00) === 0x8d00) {
+              instr.valTooltip = `hscroll table base address (divided by $400)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x8F00) {
-              instr.valTooltip = `autoincrement amount (in bytes)`
+            if ((fromValue & 0xff00) === 0x8f00) {
+              instr.valTooltip = `autoincrement amount (in bytes)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9000) {
-              instr.valTooltip = `tilemap size\n\n`
+            if ((fromValue & 0xff00) === 0x9000) {
+              instr.valTooltip = `tilemap size\n\n`;
               const hzs = fromValue & 3;
               const vzs = (fromValue >> 4) & 3;
-              instr.valTooltip = `Size in tiles: ${(hzs+1) * 32}x${(vzs+1) * 32}`
+              instr.valTooltip = `Size in tiles: ${(hzs + 1) * 32}x${
+                (vzs + 1) * 32
+              }`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9100) {
-              instr.valTooltip = `window X division`
+            if ((fromValue & 0xff00) === 0x9100) {
+              instr.valTooltip = `window X division`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9200) {
-              instr.valTooltip = `window Y division`
+            if ((fromValue & 0xff00) === 0x9200) {
+              instr.valTooltip = `window Y division`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9300) {
-              instr.valTooltip = `DMA length (low)`
+            if ((fromValue & 0xff00) === 0x9300) {
+              instr.valTooltip = `DMA length (low)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9400) {
-              instr.valTooltip = `DMA length (high)`
+            if ((fromValue & 0xff00) === 0x9400) {
+              instr.valTooltip = `DMA length (high)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9500) {
-              instr.valTooltip = `DMA source (low)`
+            if ((fromValue & 0xff00) === 0x9500) {
+              instr.valTooltip = `DMA source (low)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9600) {
-              instr.valTooltip = `DMA source (middle)`
+            if ((fromValue & 0xff00) === 0x9600) {
+              instr.valTooltip = `DMA source (middle)`;
             }
 
-            if ((fromValue & 0xFF00) === 0x9700) {
-              instr.valTooltip = `DMA source (high)\n\n`
-              const dmd = (fromValue & 0xFF) >> 6;
+            if ((fromValue & 0xff00) === 0x9700) {
+              instr.valTooltip = `DMA source (high)\n\n`;
+              const dmd = (fromValue & 0xff) >> 6;
               const op = {
-                0: 'DMA transfer (DMD0 becomes SA23)',
-                1: 'DMA transfer (DMD0 becomes SA23)',
-                2: 'VRAM fill',
-                3: 'VRAM copy'
-              }
+                0: "DMA transfer (DMD0 becomes SA23)",
+                1: "DMA transfer (DMD0 becomes SA23)",
+                2: "VRAM fill",
+                3: "VRAM copy",
+              };
 
               instr.valTooltip += op[dmd];
             }
           }
 
-          if (toValue === 0xA00000) {
-            instr.valTooltip = `$A00000 is the start of Z80 RAM`
+          if (toValue === 0xa00000) {
+            instr.valTooltip = `$A00000 is the start of Z80 RAM`;
           }
 
-          if (toValue === 0xA11100) {
+          if (toValue === 0xa11100) {
             if (fromValue === 0x100) {
-              instr.valTooltip = `Stop Z80 with BusReq to access Z80 memory`
+              instr.valTooltip = `Stop Z80 with BusReq to access Z80 memory`;
             }
           }
 
-          if (toValue === 0xA12100) {
-            instr.valTooltip = `Z80 reset control register`
+          if (toValue === 0xa12100) {
+            instr.valTooltip = `Z80 reset control register`;
           }
         }
       }
 
-      const instrIndex = this.asm.indexOf(instr);
       this.debugLineTop = instrIndex * 24 + 2;
 
       const branchInstructions = [
