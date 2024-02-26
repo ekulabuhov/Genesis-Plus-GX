@@ -14,7 +14,7 @@ export const AsmViewerComponent = {
               style="top: {{ $ctrl.branchLineTop }}px; height: {{ $ctrl.branchLineHeight }}px"
             ></div>
         </div>
-        <div class="code-listing">
+        <div class="code-listing" style="height: {{ $ctrl.totalInstructionCount * 24 }}px">
             <div class="code-row" ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px">
                 <span class="addr">
                     0x{{pa.address.toString(16)}}:
@@ -39,6 +39,7 @@ export const AsmViewerComponent = {
     asm: "<",
     showBytes: "<",
     firstInstructionIndex: "<",
+    totalInstructionCount: "<",
   },
   controller: class AsmViewerController {
     /**
@@ -54,6 +55,7 @@ export const AsmViewerComponent = {
     regs;
     firstInstructionIndex = 0;
     stopScrollEvents = false;
+    totalInstructionCount = 0;
 
     constructor() {
       /** @type {HTMLDivElement} */
@@ -64,23 +66,26 @@ export const AsmViewerComponent = {
         }
 
         const firstTop = this.firstInstructionIndex * 24;
-        if (el.scrollTop < firstTop + el.clientHeight * 2) {
+        if (
+          el.scrollTop < firstTop + el.clientHeight * 2 &&
+          this.asm[0].address !== 0
+        ) {
           console.log("should load up");
           this.stopScrollEvents = true;
-          const currentInstructionIdx = Math.ceil(
-            el.scrollTop / 24 - this.firstInstructionIndex
-          );
-          this.ws.send(`asm ${this.asm[currentInstructionIdx].address} 100`);
+          setTimeout(() => {
+            const currentInstructionIdx = Math.ceil(el.scrollTop / 24);
+            this.ws.send(`asm 0 ${Math.max(1, currentInstructionIdx)} 100`);
+          }, 500);
         }
 
         const lastTop = (this.firstInstructionIndex + this.asm.length) * 24;
         if (el.scrollTop > lastTop - el.clientHeight * 3) {
           console.log("should load down");
           this.stopScrollEvents = true;
-          const currentInstructionIdx = Math.ceil(
-            el.scrollTop / 24 - this.firstInstructionIndex + 12
-          );
-          this.ws.send(`asm ${this.asm[currentInstructionIdx].address} 100`);
+          setTimeout(() => {
+            const currentInstructionIdx = Math.ceil(el.scrollTop / 24 + 12);
+            this.ws.send(`asm 0 ${currentInstructionIdx} 100`);
+          }, 500);
         }
       };
     }
@@ -121,13 +126,39 @@ export const AsmViewerComponent = {
         console.log("instruction not found for ", this.regs.pc);
         /** @type {WebSocket} */
         const ws = window["ws"];
-        ws.send(`asm ${this.regs.pc} 100`);
+        ws.send(`asm ${this.regs.pc} 0 100`);
         this.waitingForAsm = true;
         return;
       }
 
       const instrIndex = this.asm.indexOf(instr);
-      el.scroll(0, (instrIndex + this.firstInstructionIndex) * 24);
+      this.debugLineTop = (instrIndex + this.firstInstructionIndex) * 24 + 2;
+
+      // Below logic is called when you step through code
+      const marginInLines = 3;
+      // If we're outside of current listing - jump to current instruction
+      if (
+        this.debugLineTop < el.scrollTop ||
+        this.debugLineTop > el.scrollTop + el.clientHeight
+      ) {
+        el.scroll(
+          0,
+          (instrIndex + this.firstInstructionIndex - marginInLines) * 24
+        );
+      }
+      // If we're close to the bottom border - auto scroll the listing
+      else if (this.debugLineTop > el.scrollTop + el.clientHeight - 72) {
+        const visibleLines = Math.floor(el.clientHeight / 24);
+        el.scroll({
+          top:
+            (instrIndex +
+              this.firstInstructionIndex -
+              visibleLines +
+              marginInLines) *
+            24,
+          behavior: "smooth",
+        });
+      }
 
       if (instr.mnemonic.split(".")[0] === "add") {
         const operands = instr.op_str.split(", ");
@@ -295,8 +326,6 @@ export const AsmViewerComponent = {
           }
         }
       }
-
-      this.debugLineTop = instrIndex * 24 + 2;
 
       const branchInstructions = [
         "bcc",

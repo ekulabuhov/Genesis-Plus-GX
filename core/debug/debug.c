@@ -19,6 +19,9 @@
 // To read vram
 #include "vdp_ctrl.h"
 
+#include "../../sdl/sdl2/capstone.h"
+#include "../../sdl/sdl2/rom_analyzer.h"
+
 // If set will execute one instruction and pause
 int dbg_trace;
 // If set will prevent instruction from executing and jump to main SDL loop
@@ -135,17 +138,54 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
     }
 }
 
+static fam *extracted_functions;
+
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
+    if (extracted_functions == NULL)
+    {
+        extracted_functions = get_functions();
+    }
+
     switch (type)
     {
     case HOOK_M68K_E:
     {
         unsigned short opc = m68k_read_immediate_16(m68k.prev_pc);
-        // Check for JSR
-        if ((opc >> 6) == 314)
+        int is_jsr = (opc >> 6) == 314;
+        int is_jmp = (opc >> 6) == 315;
+        if (is_jsr || is_jmp)
         {
-            printf("jump to subroutine from %04X to %04X\n", m68k.prev_pc, m68k.pc);
+
+            if (is_jsr)
+            {
+                printf("jump to subroutine from %04X to %04X\n", m68k.prev_pc, m68k.pc);
+            }
+            else
+            {
+                printf("jump from %04X to %04X\n", m68k.prev_pc, m68k.pc);
+            }
+
+            int function_found = 0;
+            for (size_t i = 0; i < extracted_functions->len; i++)
+            {
+                if (extracted_functions->arr[i] == m68k.pc)
+                {
+                    function_found = 1;
+                    break;
+                }
+            }
+
+            if (function_found)
+            {
+                printf("existing function %04X\n", m68k.pc);
+            }
+            else
+            {
+                printf("new function %04X\n", m68k.pc);
+                fam_append(extracted_functions, m68k.pc);
+                extract_functions(0x100, m68k.pc, read_memory);
+            }
         }
     }
 
@@ -226,7 +266,7 @@ void write_memory_byte(unsigned int address, unsigned int value)
     WRITE_BYTE(temp->base, (address) & 0xffff, value);
 }
 
-unsigned char *read_memory(unsigned int address, unsigned int size)
+unsigned char *read_memory(unsigned int size, unsigned int address)
 {
     unsigned char *bytes = malloc(size);
     for (unsigned int i = 0; i < size; i++)

@@ -1,10 +1,16 @@
 export const SpriteViewerComponent = {
   template: `
+      <div class="d-flex w-100 align-items-center" ng-repeat="palette in $ctrl.palettes" ng-init="paletteIndex=$index">
+        <div class="palette-label">Palette {{$index+1}}</div>
+        <div class="pixel-row d-flex" ng-repeat="color in palette track by $index">
+          <div style="background-color: #{{ $ctrl.evenPixel($index, paletteIndex) }}" class="pixel"></div>
+        </div>
+      </div>
       <div class="flex-column d-flex" ng-repeat="sprite in $ctrl.sprites">
         <div class="pixel-row d-flex" ng-repeat="row in sprite track by $index">
           <div class="d-flex" ng-repeat="byte in row track by $index">
-              <div style="background-color: #{{ $ctrl.oddPixel(byte) }}" class="pixel"></div>
-              <div style="background-color: #{{ $ctrl.evenPixel(byte) }}" class="pixel"></div>
+              <div style="background-color: #{{ $ctrl.oddPixel(byte, 0) }}" class="pixel"></div>
+              <div style="background-color: #{{ $ctrl.evenPixel(byte, 0) }}" class="pixel"></div>
           </div>
         </div>
       </div>`,
@@ -68,12 +74,12 @@ export const SpriteViewerComponent = {
       }
     }
 
-    evenPixel(byte) {
-      return this.palettes[0][byte & 0xf].toString(16).padStart(6, "0");
+    evenPixel(byte, selectedPalette) {
+      return this.palettes[selectedPalette][byte & 0xf].toString(16).padStart(6, "0");
     }
 
-    oddPixel(byte) {
-      return this.palettes[0][byte >> 4].toString(16).padStart(6, "0");
+    oddPixel(byte, selectedPalette) {
+      return this.palettes[selectedPalette][byte >> 4].toString(16).padStart(6, "0");
     }
   },
 };

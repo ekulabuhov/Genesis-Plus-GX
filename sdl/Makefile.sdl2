@@ -133,7 +133,8 @@ OBJECTS	+=	$(OBJDIR)/main.o	\
 		$(OBJDIR)/server.o	\
 		$(OBJDIR)/capstone.o	\
 		$(OBJDIR)/cpuhook.o	\
-		$(OBJDIR)/debug.o
+		$(OBJDIR)/debug.o \
+		$(OBJDIR)/rom_analyzer.o
 
 OBJECTS	+=	$(OBJDIR)/bitwise.o	 \
 		$(OBJDIR)/block.o      \

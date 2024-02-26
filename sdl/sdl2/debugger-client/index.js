@@ -94,6 +94,7 @@ appModule.controller(
         if (response.type === "asm") {
           this.asm = response.data;
           this.firstInstructionIndex = response.index;
+          this.totalInstructionCount = response.count;
         }
 
         if (response.type === "mem") {

@@ -65,6 +65,10 @@ void debug_event_handler(dbg_event_t type)
 	}
 }
 
+void send_cram_values() {
+	ws_sendframe_txt(NULL, read_memory_as_json(0, 32 * 4, "cram"));
+}
+
 /**
  * @brief Called when a client connects to the server.
  *
@@ -108,14 +112,18 @@ void onmessage(ws_cli_conn_t *client,
 		m68k_set_reg(reg, value);
 	}
 
-	// Format: "asm <address> <size>"
+	// Format: "asm <address> <index> <size>"
+	// Pass either <address> or <index>
+	// <address> is used when retrieving by PC
+	// <index> is used when free scrolling
 	if (strstr((const char *)msg, "asm") == (const char *)msg)
 	{
 		strtok((char *)msg, " ");
 
 		uint32_t address = read_number_token();
+		uint32_t index = read_number_token();
 		uint16_t size = atoi(strtok(NULL, " "));
-		disasm_rom_as_json(address, size, &message);
+		disasm_as_json(index, address, size, &message);
 	}
 
 	if (strcmp((const char *)msg, "step") == 0)
@@ -133,6 +141,11 @@ void onmessage(ws_cli_conn_t *client,
 	{
 		system_reset();
 		message = regs_as_json();
+	}
+
+	if (strcmp((const char *)msg, "funcs") == 0)
+	{
+		message = funcs();
 	}
 
 	if (strcmp((const char *)msg, "enable break_in_interrupts") == 0)
@@ -267,6 +280,7 @@ char *regs_as_json()
 	return message;
 }
 
+// type: 'rom' | 'vram' | 'cram'
 char *read_memory_as_json(uint32_t address, uint16_t size, char *type)
 {
 	// Each byte representation is 3 digits max (e.g. 255) plus 1 byte for comma, plus some extra bytes for template

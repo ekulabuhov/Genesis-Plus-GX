@@ -911,6 +911,8 @@ int main (int argc, char **argv)
     if (!pause_emu) {
       sdl_video_update();
       sdl_sound_update(use_sound);
+      // Uncomment to send CRAM updates every frame. Looks nice but kinda wasteful.
+      // send_cram_values();
     }
 
     if(!turbo_mode && sdl_sync.sem_sync && sdl_video.frames_rendered % 3 == 0)
