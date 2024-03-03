@@ -106,6 +106,12 @@ export const BreakpointsComponent = {
             });
           },
         },
+        {
+          label: `View in disassembler (${bpt.address})`,
+          click: () => {
+            WsService.asmViewer.showAsm(bpt.address);
+          }
+        }
       ]);
     }
   },

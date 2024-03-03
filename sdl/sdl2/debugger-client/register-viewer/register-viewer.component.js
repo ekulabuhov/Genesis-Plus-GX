@@ -1,4 +1,5 @@
 import { displayHex } from "../utils.js";
+import { WsService } from "../ws.service.js";
 
 export const RegisterViewerComponent = {
   template: `
@@ -150,15 +151,23 @@ export const RegisterViewerComponent = {
 
       event.preventDefault();
 
+      const displayValue = displayHex(
+        this.regs[reg.toLowerCase()]
+      )
+
       const menu = [
         {
-          label: `View in memory viewer (${displayHex(
-            this.regs[reg.toLowerCase()]
-          )})`,
+          label: `View in memory viewer (${displayValue})`,
           click: () => {
-            this.onViewMemory({ address: this.regs[reg], type: 'rom' });
+            this.onViewMemory({ address: this.regs[reg], type: "rom" });
           },
         },
+        {
+          label: `View in disassembler (${displayValue})`,
+          click: () => {
+            WsService.asmViewer.showAsm(this.regs[reg]);
+          }
+        }
       ];
 
       this.menuService.showMenu(event, menu);

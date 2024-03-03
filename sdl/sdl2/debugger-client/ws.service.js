@@ -60,4 +60,25 @@ export class WsService {
     address = address.slice(0, address.length - 1) + "0";
     this.ws.send(`mem ${address} 128 ${type}`);
   }
+
+  static getAsm(address) {
+    return new Promise((resolve) => {
+      this.waiting = [resolve];
+      this.ws.send(`asm ${address} 0 100`);
+    })
+  }
+
+  static onMessage(data) {
+    if (this.waiting.length) {
+      this.waiting[0](data);
+    }
+  }
+
+  static waiting = [];
+
+  /** @type {import("./asm-viewer/asm-viewer.component").AsmViewerController} */
+  static asmViewer;
+  /** @type {import("./tabs/tabs.component").MyTabsController} */
+  static tabsController;
 }
+

@@ -16,6 +16,8 @@ import { MenuComponent } from "./menu/menu.component.js";
 import { MenuService } from "./menu/menu.service.js";
 import { RegisterViewerComponent } from "./register-viewer/register-viewer.component.js";
 import { SpriteViewerComponent } from "./sprite-viewer/sprite-viewer.component.js";
+import { PaneComponent } from "./tabs/pane.component.js";
+import { TabsComponent } from "./tabs/tabs.component.js";
 import { WsService } from "./ws.service.js";
 
 const appModule = angular.module("app", []);
@@ -26,6 +28,8 @@ appModule.component("spriteViewer", SpriteViewerComponent);
 appModule.component("breakpoints", BreakpointsComponent);
 appModule.component("appMenu", MenuComponent);
 appModule.service("menuService", MenuService);
+appModule.component("myTabs", TabsComponent);
+appModule.component("myPane", PaneComponent);
 
 appModule.controller(
   "RegController",
@@ -85,6 +89,8 @@ appModule.controller(
       /* Deals with messages. */
       ws.onmessage = (evt) => {
         const response = JSON.parse(evt.data);
+
+        WsService.onMessage(response);
 
         if (response.type === "regs") {
           this.isRunning = false;
@@ -152,6 +158,7 @@ appModule.controller(
       const alignedAddress = address.slice(0, address.length - 1) + "0";
       this.memSelectedOffset = parseInt(address) - parseInt(alignedAddress);
       WsService.showMemoryLocation(address, type);
+      WsService.tabsController.selectByName("Memory");
     }
 
     onBreakInInterruptsChange() {

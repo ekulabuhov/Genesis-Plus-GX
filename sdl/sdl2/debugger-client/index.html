@@ -15,8 +15,8 @@
     <link href="sprite-viewer/sprite-viewer.css" rel="stylesheet" />
     <script type="module" src="index.js"></script>
   </head>
-  <body class="container-fluid p-3" ng-controller="RegController as $ctrl">
-    <div class="row">
+  <body class="container-fluid p-3" ng-controller="RegController as $ctrl" style="height: 100vh;">
+    <div class="row h-100">
       <div class="col" id="header">
         <h1>Debugger</h1>
         <div class="d-flex justify-content-between mb-3">
@@ -107,26 +107,32 @@
           total-instruction-count="$ctrl.totalInstructionCount"
         ></asm-viewer>
       </div>
-      <div class="col reg-window">
+      <div class="col h-100 d-flex flex-column">
         <register-viewer
           regs="$ctrl.regs"
           on-view-memory="$ctrl.viewMemory(address, type)"
           class="row"
         ></register-viewer>
 
-        <breakpoints
-          on-view-memory="$ctrl.viewMemory(address, type)"
-        ></breakpoints>
-
-        <memory-viewer
-          memory="$ctrl.memory"
-          address="$ctrl.address"
-          mem-type="$ctrl.memType"
-          selected="$ctrl.memSelectedOffset"
-          class="font-monospace"
-        ></memory-viewer>
-
-        <sprite-viewer vram="$ctrl.vram" cram="$ctrl.cram"></sprite-viewer>
+        <my-tabs class="overflow-auto" selected-pane-title="$ctrl.selectedPaneTitle">
+          <my-pane title="Breakpoints">
+            <breakpoints
+              on-view-memory="$ctrl.viewMemory(address, type)"
+            ></breakpoints>
+          </my-pane>
+          <my-pane title="Memory">
+            <memory-viewer
+              memory="$ctrl.memory"
+              address="$ctrl.address"
+              mem-type="$ctrl.memType"
+              selected="$ctrl.memSelectedOffset"
+              class="font-monospace"
+            ></memory-viewer>
+          </my-pane>
+          <my-pane title="Sprites">
+            <sprite-viewer vram="$ctrl.vram" cram="$ctrl.cram"></sprite-viewer>
+          </my-pane>
+        </my-tabs>
       </div>
     </div>
     <app-menu></app-menu>
