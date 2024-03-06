@@ -5,7 +5,7 @@ CFLAGS    = -march=native -O0 -fomit-frame-pointer -Wall -Wno-strict-aliasing -s
 # Flags required to build on MacOS. -g provides debug symbols.
 CFLAGS   += -Wpedantic -Wno-c11-extensions -Winvalid-utf8 -Wstrict-prototypes -g
 
-DEFINES   = 
+DEFINES   = -DOWN_APP
 
 SRCDIR    = ../core
 INCLUDES  = -I$(SRCDIR)
@@ -23,7 +23,8 @@ LIBS += -lsqlite3
 
 OBJDIR = ./build_rom_analyzer
 
-OBJECTS	=       $(OBJDIR)/rom_analyzer.o
+OBJECTS	=       $(OBJDIR)/rom_analyzer.o \
+	$(OBJDIR)/capstone.o
 
 all: $(NAME)
 

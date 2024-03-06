@@ -4,7 +4,7 @@ import { WsService } from "../ws.service.js";
 export const RegisterViewerComponent = {
   template: `
     <div class="col">
-      <div class="input-group mb-3" ng-repeat="reg in $ctrl.regLabels[0]">
+      <div class="input-group" ng-repeat="reg in $ctrl.regLabels[0]">
         <span class="input-group-text">{{reg}}</span>
         <input
           type="text"
@@ -17,7 +17,7 @@ export const RegisterViewerComponent = {
       </div>
     </div>
     <div class="col">
-      <div class="input-group mb-3" ng-repeat="reg in $ctrl.regLabels[1]">
+      <div class="input-group" ng-repeat="reg in $ctrl.regLabels[1]">
         <span class="input-group-text">{{reg}}</span>
         <input
           type="text"

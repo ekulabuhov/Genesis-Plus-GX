@@ -81,8 +81,29 @@ struct Tuple find_rts(int length, int address, const unsigned char *code, csh ha
         printf("%02X: %s\t%s, %s\n", insn[i].address, bytesAsString, insn[i].mnemonic, insn[i].op_str);
         if (fully_decoded || i < (count - 1))
         {
-            run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\", size) VALUES ('%d', '%s', '%s', '%d')\n",
-                    insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].size);
+            char *op_1 = malloc(10);
+            sprintf(op_1, "NULL");
+            int jump_to = 0;
+            if (strstr(insn[i].mnemonic, "jsr") == insn[i].mnemonic)
+            {
+                switch (insn[i].detail->m68k.operands[0].address_mode)
+                {
+                case M68K_AM_ABSOLUTE_DATA_LONG:
+                case M68K_AM_ABSOLUTE_DATA_SHORT:
+                    jump_to = insn[i].detail->m68k.operands[0].imm;
+                    break;
+                case M68K_AM_PCI_DISP:
+                    jump_to = insn[i].address + insn[i].detail->m68k.operands[0].mem.disp + 2;
+                    break;
+                }
+
+                if (jump_to) {
+                    sprintf(op_1, "'%X'", jump_to);
+                }
+            }
+             
+            run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\", size, op_1) VALUES ('%d', '%s', '%s', '%d', %s)\n",
+                    insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].size, op_1);
         }
 
         if (strstr(insn[i].mnemonic, "dbra") == insn[i].mnemonic)
@@ -389,6 +410,7 @@ static uint32_t read_rom_uint(FILE *pFile, uint32_t address)
 }
 
 #ifdef OWN_APP
+sqlite3 *db;
 int main(int argc, char **argv)
 {
     int rc = sqlite3_open("Dune - The Battle for Arrakis (U) [!].sqlite3", &db);

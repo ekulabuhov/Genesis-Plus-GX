@@ -11,5 +11,5 @@ export const PaneComponent = {
       this.tabsCtrl.addPane(this);
     };
   },
-  template: `<div class="tab-pane" ng-show="$ctrl.selected" ng-transclude></div>`,
+  template: `<div class="h-100 tab-pane" ng-show="$ctrl.selected" ng-transclude></div>`,
 };

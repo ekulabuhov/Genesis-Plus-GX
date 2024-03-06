@@ -28,7 +28,7 @@ struct SqlResult run_sql(const char *sql, ...)
     vsprintf(sql_formatted, sql, arg);
     va_end(arg);
 
-    printf("%s", sql_formatted);
+    printf("%s\n", sql_formatted);
 
     char **aResult;
     int nRow = 0, nCol = 0;
@@ -46,52 +46,33 @@ struct SqlResult run_sql(const char *sql, ...)
 void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **message)
 {
     struct SqlResult count = run_sql("select count(*) from instructions");
-    struct SqlResult result;
-    if (address)
-    {
-        result = run_sql("WITH const as (select rowNum from (SELECT address, row_number() OVER (ORDER BY address) AS rowNum FROM instructions) t where t.address = %d)\
-    SELECT * FROM\
-    (SELECT\
-	    id,\
-	    row_number() OVER (ORDER BY address) AS rowNum,\
-	    address,\
-	    mnemonic,\
-	    op_str,\
-	    size\
-    FROM\
-	    instructions) t, const\
-    where t.rowNum >= const.rowNum - 100 and t.rowNum < const.rowNum + 100\n",
-                         address);
+
+    if (address) {
+        struct SqlResult rowNum = run_sql("select rowNum from (SELECT address, row_number() OVER (ORDER BY address) AS rowNum FROM instructions) t where t.address = %d", address);
+        index = atoi(rowNum.aResult[1]);
+        sqlite3_free_table(rowNum.aResult);
     }
-    else if (index)
-    {
-        result = run_sql("SELECT * FROM\
+
+    struct SqlResult result = run_sql("SELECT json_group_array (json_object('address', t.address, 'mnemonic', mnemonic, 'op_str', ifnull(l.name,op_str), 'op_1', op_1 ))\
+        FROM\
     (SELECT\
 	    id,\
 	    row_number() OVER (ORDER BY address) AS rowNum,\
 	    address,\
 	    mnemonic,\
 	    op_str,\
-	    size\
+	    size,\
+        op_1\
     FROM\
 	    instructions) t\
+        LEFT JOIN labels l ON t.op_1 = l.address\
     where t.rowNum >= %d - 100 and t.rowNum < %d + 100\n",
                          index, index);
-    }
+    
 
-    *message = malloc(15000);
-    sprintf(*message, "{ \"type\": \"asm\", \"index\": %s, \"count\": %s, \"data\": [\n", result.aResult[1 * result.nCol + 1], count.aResult[1]);
-
-    for (size_t j = 1; j <= result.nRow; j++)
-    {
-        char *lastChar = (j == result.nRow) ? "]}" : ",";
-
-        sprintf(*message + strlen(*message), "{ "
-                                             "\"address\": %s,"
-                                             "\"mnemonic\": \"%s\","
-                                             "\"op_str\": \"%s\" }%s\n",
-                result.aResult[j * result.nCol + 2], result.aResult[j * result.nCol + 3], result.aResult[j * result.nCol + 4], lastChar);
-    }
+    *message = malloc(strlen(result.aResult[1]) + 100);
+    
+    sprintf(*message, "{ \"type\": \"asm\", \"index\": %u, \"count\": %s, \"data\": %s }", index > 100 ? index - 100 : 1, count.aResult[1], result.aResult[1]);
 
     sqlite3_free_table(result.aResult);
     sqlite3_free_table(count.aResult);
@@ -134,6 +115,14 @@ fam *get_functions(void)
 
 char *funcs(void)
 {
-    struct SqlResult result = run_sql("select json_group_array(json_object('start_address', start_address, 'end_address', end_address)) from functions");
+    struct SqlResult result = run_sql("select json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs))) from \
+    (select f.*, NULLIF(json_group_array(printf('%%X', i.address)), '[\"0\"]') as refs, l.name\
+    from functions f\
+    left join instructions i on \
+        i.op_1 = printf('%%X', f.start_address)\
+        and mnemonic = 'jsr'\
+    LEFT JOIN labels l on i.op_1 = l.address\
+    group by f.start_address\
+    ORDER BY f.start_address) t");
     return result.aResult[1];
 }

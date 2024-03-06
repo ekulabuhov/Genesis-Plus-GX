@@ -16,9 +16,18 @@ export class AsmViewerController {
   firstInstructionIndex = 0;
   stopScrollEvents = false;
   totalInstructionCount = 0;
+  /** @type {{start_address: number, end_address: number, name: string, references: string[]}[]} */
+  funcs = [];
+  /** @type {import("../menu/menu.service.js").MenuService} */
+  menuService;
 
-  constructor() {
+  constructor(menuService) {
+    this.menuService = menuService;
     WsService.asmViewer = this;
+
+    WsService.on("open", async () => {
+      this.funcs = await WsService.sendMessage("funcs");
+    });
 
     const el = this.disasmWindow;
     el.onscroll = (e) => {
@@ -63,6 +72,8 @@ export class AsmViewerController {
 
   $onChanges(changesObj) {
     if (changesObj["asm"]?.currentValue) {
+      this.insertFunctionLabels();
+
       if (this.stopScrollEvents) {
         this.stopScrollEvents = false;
       }
@@ -76,6 +87,39 @@ export class AsmViewerController {
     if (changesObj["regs"]?.currentValue) {
       this.refresh();
     }
+  }
+
+  insertFunctionLabels() {
+    this.funcs.forEach((func) => {
+      const fa = this.asm.findIndex(
+        (asm) => asm.address === func.start_address
+      );
+      if (fa !== -1) {
+        this.asm.splice(fa, 0, {
+          mnemonic:
+            (func.name ||
+              `FUN_${func.start_address.toString(16).padStart(8, "0")}`) + ":",
+          type: "label",
+          references: func.references,
+        });
+      }
+    });
+  }
+
+  /**
+   * @param {MouseEvent} event
+   * @param {string[]} references
+   */
+  onReferencesClick(event, references) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.menuService.showMenu(
+      event,
+      references.map((r) => ({
+        label: `Go to $${r}`,
+        click: () => this.showAsm("0x" + r),
+      }))
+    );
   }
 
   refresh() {
@@ -113,7 +157,10 @@ export class AsmViewerController {
       );
     }
     // If we're close to the bottom border - auto scroll the listing
-    else if (this.debugLineTop > disasmWindow.scrollTop + disasmWindow.clientHeight - 72) {
+    else if (
+      this.debugLineTop >
+      disasmWindow.scrollTop + disasmWindow.clientHeight - 72
+    ) {
       const visibleLines = Math.floor(disasmWindow.clientHeight / 24);
       disasmWindow.scroll({
         top:
@@ -217,9 +264,7 @@ export class AsmViewerController {
             instr.valTooltip += `${
               ste ? "enable" : "disable"
             } shadow/highlight\n`;
-            instr.valTooltip += `${
-              lsm ? "interlaced mode" : "no interlacing"
-            }`;
+            instr.valTooltip += `${lsm ? "interlaced mode" : "no interlacing"}`;
           }
 
           if ((fromValue & 0xff00) === 0x8d00) {
@@ -568,9 +613,7 @@ alterable addressing modes can be used by the TST
 instruction.`,
     };
 
-    branchInstructions.forEach(
-      (bi) => (descriptions[bi] = branchDescription)
-    );
+    branchInstructions.forEach((bi) => (descriptions[bi] = branchDescription));
 
     decrementAndBranchInstructions.forEach(
       (bi) => (descriptions[bi] = decrementAndBranchDescription)
@@ -602,7 +645,18 @@ instruction.`,
     }).show();
   }
 
+  onOpClick(event, op) {
+    this.showAsm(op);
+  }
+
+  /**
+   * @param {string} address
+   */
   async showAsm(address) {
+    if (address.indexOf("0x") === -1) {
+      address = "0x" + address;
+    }
+
     const data = await WsService.getAsm(address);
     // Adding 100 because we get 100 extra instructions on each side around address
     this.disasmWindow.scrollTo(0, (data.index + 100) * 24);
@@ -625,7 +679,16 @@ export const AsmViewerComponent = {
         </div>
         <div class="code-listing" style="height: {{ $ctrl.totalInstructionCount * 24 }}px">
             <div class="code-row" ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px">
-                <span class="addr">
+                <span ng-if-start="pa.type === 'label'">{{pa.mnemonic}}</span>
+                <button ng-if-end
+                  ng-if="pa.references.length" 
+                  class="btn btn-link p-0"
+                  ng-click="$ctrl.onReferencesClick($event, pa.references)"
+                >
+                  {{pa.references.length}} reference{{pa.references.length > 1 ? 's' : ''}}
+                </button>
+
+                <span ng-if-start="pa.type !== 'label'" class="addr">
                     0x{{pa.address.toString(16)}}:
                 </span>
                 <span ng-if="$ctrl.showBytes" class="bytes">
@@ -634,10 +697,13 @@ export const AsmViewerComponent = {
                 <span class="mnemonic" ng-mouseover="$ctrl.displayTooltip($event, pa.mnemonic)">
                     {{pa.mnemonic}}
                 </span>
-                <span class="op_str">
+                <span ng-if="!pa.op_1" class="op_str">
                     {{pa.op_str}}
                 </span>
-                <span ng-mouseover="$ctrl.displayExplainTooltip($event, pa.valTooltip)">
+                <button class="btn btn-link p-0" ng-if="pa.op_1" ng-click="$ctrl.onOpClick($event, pa.op_1)">
+                    {{pa.op_str}}
+                </button>
+                <span ng-if-end ng-mouseover="$ctrl.displayExplainTooltip($event, pa.valTooltip)">
                     {{pa.explain}}
                 </span>
             </div>
@@ -650,5 +716,5 @@ export const AsmViewerComponent = {
     firstInstructionIndex: "<",
     totalInstructionCount: "<",
   },
-  controller: AsmViewerController
+  controller: AsmViewerController,
 };

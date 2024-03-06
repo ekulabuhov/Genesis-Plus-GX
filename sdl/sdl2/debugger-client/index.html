@@ -13,9 +13,14 @@
     <link href="memory-viewer/memory-viewer.css" rel="stylesheet" />
     <link href="asm-viewer/asm-viewer.css" rel="stylesheet" />
     <link href="sprite-viewer/sprite-viewer.css" rel="stylesheet" />
+    <link href="register-viewer/register-viewer.css" rel="stylesheet" />
     <script type="module" src="index.js"></script>
   </head>
-  <body class="container-fluid p-3" ng-controller="RegController as $ctrl" style="height: 100vh;">
+  <body
+    class="container-fluid p-3"
+    ng-controller="RegController as $ctrl"
+    style="height: 100vh"
+  >
     <div class="row h-100">
       <div class="col" id="header">
         <h1>Debugger</h1>
@@ -112,9 +117,10 @@
           regs="$ctrl.regs"
           on-view-memory="$ctrl.viewMemory(address, type)"
           class="row"
+          style="--bs-border-radius: 0"
         ></register-viewer>
 
-        <my-tabs class="overflow-auto" selected-pane-title="$ctrl.selectedPaneTitle">
+        <my-tabs class="h-100 overflow-auto">
           <my-pane title="Breakpoints">
             <breakpoints
               on-view-memory="$ctrl.viewMemory(address, type)"
@@ -122,15 +128,11 @@
           </my-pane>
           <my-pane title="Memory">
             <memory-viewer
-              memory="$ctrl.memory"
-              address="$ctrl.address"
-              mem-type="$ctrl.memType"
-              selected="$ctrl.memSelectedOffset"
-              class="font-monospace"
+              class="d-flex h-100 flex-column font-monospace"
             ></memory-viewer>
           </my-pane>
           <my-pane title="Sprites">
-            <sprite-viewer vram="$ctrl.vram" cram="$ctrl.cram"></sprite-viewer>
+            <sprite-viewer class="h-100"></sprite-viewer>
           </my-pane>
         </my-tabs>
       </div>

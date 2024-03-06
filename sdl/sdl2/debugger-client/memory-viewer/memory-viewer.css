@@ -40,9 +40,3 @@
 .selected {
     background-color: #264f78;
 }
-
-memory-viewer {
-    border: var(--bs-border-width) solid var(--bs-border-color);
-    border-radius: var(--bs-border-radius);
-    display: block;
-}

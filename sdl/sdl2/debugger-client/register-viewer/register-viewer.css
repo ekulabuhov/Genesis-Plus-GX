@@ -1,0 +1,14 @@
+/* Remove bottom borders as we've collapsed them into a table */
+register-viewer .input-group-text {
+    width: 48px;
+    border-bottom: none;
+}
+
+register-viewer .form-control {
+    border-bottom: none;
+}
+
+/* Re-add bottom border on last element */
+register-viewer .input-group:last-child * {
+    border-bottom: var(--bs-border-width) solid var(--bs-border-color);
+}

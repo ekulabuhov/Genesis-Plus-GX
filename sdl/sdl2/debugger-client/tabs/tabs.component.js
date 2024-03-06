@@ -11,6 +11,17 @@ export class MyTabsController {
     const foundPane = this.panes.find((pane) => pane.title === name);
     if (foundPane) {
       this.select(foundPane);
+      // Return a promise that resolves when the pane is rendered (height becomes more than 0px)
+      return new Promise((resolve) => {
+        const ro = new ResizeObserver((e) => {
+          if (!e[0].target.clientHeight) {
+            return;
+          }
+          resolve();
+          ro.disconnect();
+        });
+        ro.observe(document.querySelector(`my-pane[title=${name}] .tab-pane`));
+      });
     }
   }
 
@@ -36,6 +47,7 @@ export const TabsComponent = {
             <a class="nav-link" ng-click="$ctrl.select(pane)" ng-class="{active:pane.selected}" href="#">{{pane.title}}</a>
         </li>
     </ul>
-    <div class="tab-content overflow-auto" ng-transclude></div>
+    <div class="tab-content h-100 overflow-auto" style="border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);" ng-transclude></div>
   </div>`,
 };

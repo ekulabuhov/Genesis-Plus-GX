@@ -1,7 +1,44 @@
 export class WsService {
+  /** @typedef {'open'|'message'|'close'} eventTypes */
   /** @type {WebSocket} */
-  static get ws() {
-    return window["ws"];
+  ws;
+  static listeners = {};
+  /**
+   *
+   * @param {eventTypes} event
+   * @param {*} handler
+   */
+  static on(event, handler) {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
+
+    this.listeners[event].push(handler);
+  }
+
+  /**
+   *
+   * @param {eventTypes} event
+   */
+  static _callListeners(event, data) {
+    this.listeners[event]?.forEach((handler) => handler(data));
+  }
+
+  /* Establish connection. */
+  static doConnect(addr) {
+    /* Do connection. */
+    const ws = (this.ws = window["ws"] = new WebSocket(addr));
+    ws.onopen = () => {
+      this._callListeners("open");
+    };
+    ws.onclose = () => {
+      this._callListeners("close");
+    };
+    ws.onmessage = (evt) => {
+      const response = JSON.parse(evt.data);
+      this._callListeners("message", response);
+      this._onMessage(response);
+    };
   }
 
   /**
@@ -33,7 +70,7 @@ export class WsService {
       }
     }
 
-    this.ws.send(`bpt add ${bpt.address} ${type} ${bpt.value_equal ?? ''}`);
+    this.ws.send(`bpt add ${bpt.address} ${type} ${bpt.value_equal ?? ""}`);
   }
 
   static syncBreakpoints() {
@@ -52,25 +89,42 @@ export class WsService {
   }
 
   /**
-   * @param {string} address
+   * @param {string|number} address
+   * @param {number} size
    * @param {'rom' | 'vram' | 'cram'} [type]
    */
-  static showMemoryLocation(address, type) {
+  static showMemoryLocation(address, size, type = 'rom') {
+    if (typeof address !== "string") {
+      address = "0x" + address.toString(16);
+    }
     // Replace last char with zero as control is zero based
     address = address.slice(0, address.length - 1) + "0";
-    this.ws.send(`mem ${address} 128 ${type}`);
+    return this.sendMessage(`mem ${address} ${size} ${type}`);
   }
 
   static getAsm(address) {
-    return new Promise((resolve) => {
-      this.waiting = [resolve];
-      this.ws.send(`asm ${address} 0 100`);
-    })
+    return this.sendMessage(`asm ${address} 0 100`);
   }
 
-  static onMessage(data) {
-    if (this.waiting.length) {
-      this.waiting[0](data);
+  static send(message) {
+    this.ws.send(message);
+  }
+
+  static close() {
+    this.ws.close();
+  }
+
+  static sendMessage(message) {
+    return new Promise((resolve) => {
+      this.waiting.push(resolve);
+      this.ws.send(message);
+    });
+  }
+
+  static _onMessage(data) {
+    const resolve = this.waiting.shift();
+    if (resolve) {
+      resolve(data);
     }
   }
 
@@ -80,5 +134,6 @@ export class WsService {
   static asmViewer;
   /** @type {import("./tabs/tabs.component").MyTabsController} */
   static tabsController;
+  /** @type {import("./memory-viewer/memory-viewer.component").MemoryViewerController} */
+  static memoryViewer;
 }
-

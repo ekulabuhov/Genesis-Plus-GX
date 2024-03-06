@@ -41,13 +41,6 @@ appModule.controller(
     regs;
     asm = [];
     $scope;
-    memory = [
-      [0x31, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-      [0x31, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-    ];
-    address = 0;
-    cram = [];
-    vram = [];
     _breakInInterrupts;
     isRunning = false;
 
@@ -69,29 +62,19 @@ appModule.controller(
 
     /* Establish connection. */
     doConnect(addr) {
-      /* Do connection. */
-      const ws = (this.ws = window["ws"] = new WebSocket(addr));
-
       /* Register events. */
-      ws.onopen = () => {
+      WsService.on('open', () => {
         this.connected = true;
         this.btConnValue = "Disconnect!";
         console.log("Connection opened");
 
-        ws.send("regs");
-        ws.send("mem 256 128");
-        ws.send("mem 0 128 cram");
-        ws.send("mem 0 256 vram");
+        WsService.send("regs");
         this.onBreakInInterruptsChange();
         WsService.syncBreakpoints();
-      };
+      });
 
       /* Deals with messages. */
-      ws.onmessage = (evt) => {
-        const response = JSON.parse(evt.data);
-
-        WsService.onMessage(response);
-
+      WsService.on('message', (response) => {
         if (response.type === "regs") {
           this.isRunning = false;
           this.regs = response.data;
@@ -103,25 +86,11 @@ appModule.controller(
           this.totalInstructionCount = response.count;
         }
 
-        if (response.type === "mem") {
-          this.memory = response.data;
-          this.address = response.address;
-          this.memType = response.mem_type;
-
-          if (response.mem_type === "cram") {
-            this.cram = response.data;
-          }
-
-          if (response.mem_type === "vram") {
-            this.vram = response.data;
-          }
-        }
-
         this.$scope.$apply();
-      };
+      });
 
       /* Close events. */
-      ws.onclose = (event) => {
+      WsService.on('close', (event) => {
         this.btConnValue = "Connect!";
         console.log(
           "Connection closed: wasClean: " +
@@ -130,7 +99,9 @@ appModule.controller(
             event.code
         );
         this.connected = false;
-      };
+      });
+
+      WsService.doConnect(addr);
     }
 
     /* Connect button. */
@@ -139,14 +110,14 @@ appModule.controller(
         var txt = document.getElementById("txtServer").value;
         this.doConnect(txt);
       } else {
-        this.ws.close();
+        WsService.close();
         this.connected = false;
         this.btConnValue = "Connect!";
       }
     }
 
     onSendClick() {
-      this.ws.send(this.userMessage);
+      WsService.send(this.userMessage);
       this.userMessage = "";
     }
 
@@ -154,20 +125,18 @@ appModule.controller(
      * @param {string} address
      * @param {string} type
      */
-    viewMemory(address, type) {
-      const alignedAddress = address.slice(0, address.length - 1) + "0";
-      this.memSelectedOffset = parseInt(address) - parseInt(alignedAddress);
-      WsService.showMemoryLocation(address, type);
-      WsService.tabsController.selectByName("Memory");
+    async viewMemory(address, type) {
+      await WsService.tabsController.selectByName("Memory");
+      WsService.memoryViewer.showMemoryLocation(address, type);
     }
 
     onBreakInInterruptsChange() {
-      this.ws.send(`${this.breakInInterrupts ? 'enable' : 'disable'} break_in_interrupts`)
+      WsService.send(`${this.breakInInterrupts ? 'enable' : 'disable'} break_in_interrupts`)
     }
 
     onRunClick() {
       this.isRunning = true;
-      this.ws.send('run');
+      WsService.send('run');
     }
   }
 );
@@ -175,8 +144,11 @@ appModule.controller(
 document.onkeydown = function (e) {
   if (e.key === "F11" || e.key === "F10") {
     e.preventDefault();
-    /** @type {WebSocket} */
-    const ws = window["ws"];
-    ws.send(`step`);
+    WsService.send(`step`);
+  }
+
+  if (e.key === 'g') {
+    const response = prompt("Go to where?");
+    WsService.asmViewer.showAsm(response);
   }
 };
