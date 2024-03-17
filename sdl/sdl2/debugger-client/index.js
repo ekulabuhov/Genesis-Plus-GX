@@ -19,6 +19,7 @@ import { SpriteViewerComponent } from "./sprite-viewer/sprite-viewer.component.j
 import { PaneComponent } from "./tabs/pane.component.js";
 import { TabsComponent } from "./tabs/tabs.component.js";
 import { WsService } from "./ws.service.js";
+import { Ym2612Component } from "./ym2612/ym2612.component.js";
 
 const appModule = angular.module("app", []);
 appModule.component("memoryViewer", MemoryViewerComponent);
@@ -30,6 +31,7 @@ appModule.component("appMenu", MenuComponent);
 appModule.service("menuService", MenuService);
 appModule.component("myTabs", TabsComponent);
 appModule.component("myPane", PaneComponent);
+appModule.component("ym2612", Ym2612Component);
 
 appModule.controller(
   "RegController",

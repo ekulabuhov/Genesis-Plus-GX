@@ -12,7 +12,9 @@
 #include "debug.h"
 jmp_buf jmp_env;
 
-#define SOUND_FREQUENCY 48000
+static Uint32 sdl_sync_timer_callback(Uint32 interval, void *param);
+
+#define SOUND_FREQUENCY 44100
 #define SOUND_SAMPLES_SIZE  2048
 
 #define VIDEO_WIDTH  320
@@ -59,18 +61,29 @@ static short soundframe[SOUND_SAMPLES_SIZE];
 static void sdl_sound_callback(void *userdata, Uint8 *stream, int len)
 {
   if(sdl_sound.current_emulated_samples < len) {
+    printf("setting to 0, current_emulated_samples: %d, len: %d\n", sdl_sound.current_emulated_samples, len);
+    // We don't have enough samples generated to fill the buffer - so fill it with silence using zeroes
     memset(stream, 0, len);
   }
   else {
     memcpy(stream, sdl_sound.buffer, len);
-    /* loop to compensate desync */
-    do {
-      sdl_sound.current_emulated_samples -= len;
-    } while(sdl_sound.current_emulated_samples > 2 * len);
+    printf("copying buffer, current_emulated_samples: %d, len: %d\n", sdl_sound.current_emulated_samples, len);
+
+    sdl_sound.current_emulated_samples -= len;
+    
+    // Move remaining sample to the start of the sound buffer
     memcpy(sdl_sound.buffer,
            sdl_sound.current_pos - sdl_sound.current_emulated_samples,
            sdl_sound.current_emulated_samples);
     sdl_sound.current_pos = sdl_sound.buffer + sdl_sound.current_emulated_samples;
+
+    // Main loop will block every 50-60ms to prevent emulator from running too fast
+    // We're using a timer to unblock the loop and generate more samples for the sound system
+    // Unfortunately, timers on MacOS are not that reliable - so once in a while we'd get a buffer underrun and hear an audible click
+    // To prevent that - unblock main thread as soon as we run out of samples
+    if (sdl_sound.current_emulated_samples < len) {
+      sdl_sync_timer_callback(0, NULL);
+    }
   }
 }
 
@@ -107,9 +120,12 @@ static int sdl_sound_init()
   return 1;
 }
 
+static struct timespec start, end;
 static void sdl_sound_update(int enabled)
 {
   int size = audio_update(soundframe) * 2;
+
+  clock_gettime(CLOCK_MONOTONIC_RAW, &end);
 
   if (enabled)
   {
@@ -124,6 +140,11 @@ static void sdl_sound_update(int enabled)
     }
     sdl_sound.current_pos = (char*)out;
     sdl_sound.current_emulated_samples += size * sizeof(short);
+
+    uint64_t diff_in_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+    printf("Diff: %d, size: %d, current_emulated_samples: %d\n", diff_in_ms, size, sdl_sound.current_emulated_samples);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+    
     SDL_UnlockAudio();
   }
 }
@@ -384,6 +405,7 @@ static int sdl_control_update(SDL_Keycode keystate)
           fread(&buf, STATE_SIZE, 1, f);
           state_load(buf);
           fclose(f);
+          printf("state loaded\n");
         }
         break;
       }
@@ -397,6 +419,7 @@ static int sdl_control_update(SDL_Keycode keystate)
           int len = state_save(buf);
           fwrite(&buf, len, 1, f);
           fclose(f);
+          printf("state saved\n");
         }
         break;
       }

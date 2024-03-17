@@ -57,11 +57,17 @@ void onclose(ws_cli_conn_t *client)
 /**
  * @brief Called when we receive an event from debugger
  */
-void debug_event_handler(dbg_event_t type)
+void debug_event_handler(dbg_event_t type, void *data)
 {
 	if (type == DBG_STEP)
 	{
 		ws_sendframe_txt(NULL, regs_as_json());
+	}
+
+	if (type == DBG_YM2612) 
+	{
+		char* json = (char*)data;
+		ws_sendframe_txt(NULL, json);
 	}
 }
 

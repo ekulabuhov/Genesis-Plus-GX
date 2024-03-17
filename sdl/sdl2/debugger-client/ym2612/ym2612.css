@@ -1,0 +1,29 @@
+.note {
+  height: 10px;
+  position: absolute;
+  border: 1px solid;
+}
+
+.track {
+  border-bottom: 1px solid;
+}
+
+.one-second {
+  flex-grow: 1;
+  border-right: 1px solid;
+}
+
+.grid {
+  display: flex;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.time-line {
+  position: absolute;
+  height: 100%;
+  width: 1px;
+  background-color: yellow;
+}

@@ -13,10 +13,11 @@ int dbg_in_interrupt;
 int break_in_interrupt;
 
 typedef enum {
-	DBG_STEP = 0
+	DBG_STEP = 0,
+    DBG_YM2612 = 1
 } dbg_event_t;
 
-void set_debug_hook(void(*hook)(dbg_event_t type));
+void set_debug_hook(void(*hook)(dbg_event_t type, void *data));
 unsigned char read_memory_byte(unsigned int address, char* type);
 void write_memory_byte(unsigned int address, unsigned int value);
 unsigned char* read_memory(unsigned int address, unsigned int size);

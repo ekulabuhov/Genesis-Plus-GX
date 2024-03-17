@@ -29,7 +29,7 @@ int dbg_paused;
 // If set we are in the middle of the interrupt
 int dbg_in_interrupt;
 // Callback that is executed each time debug event happens (e.g. step)
-void (*debug_hook)(dbg_event_t type) = NULL;
+void (*debug_hook)(dbg_event_t type, void *data) = NULL;
 
 static breakpoint_t *first_bp = NULL;
 
@@ -131,7 +131,7 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
 
         if ((address <= (bp->address + bp->width)) && ((address + width) >= bp->address))
         {
-            printf("breakpoint hit at addr: %u, type: %u\n", address, type);
+            printf("breakpoint hit at addr: 0x%X, type: %u, value: 0x%X\n", address, type, value);
             dbg_paused = 1;
             break;
         }
@@ -139,6 +139,11 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
 }
 
 static fam *extracted_functions;
+static struct timespec start, end;
+
+static char *ym2612_buf;
+static int send_next = 0;
+const char* template = "{ \"type\": \"ym2612\", \"data\": [";
 
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
@@ -149,6 +154,46 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
 
     switch (type)
     {
+    case HOOK_Z80_W:
+        // Collects and sends YM2612 note-on events to frontend for visualization
+        if (address >= 0x4000 && address <= 0x4003)
+        {
+            if (ym2612_buf == NULL)
+            {
+                ym2612_buf = malloc(2000);
+                sprintf(ym2612_buf, template);
+            }
+
+            uint64_t diff_in_ms = 0;
+
+            // Capture time difference between previous key-on/key-off to track how much time has passed
+            if (value == 0x28)
+            {
+                clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+                if (start.tv_sec != 0) {
+                    diff_in_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+                }
+                clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+            }
+
+            char *lastChar = send_next ? "]}" : ",";
+            sprintf(ym2612_buf + strlen(ym2612_buf), "[%llu, %X, \"%X\"]%s", diff_in_ms, address & 3, value, lastChar);
+
+            if (send_next)
+            {
+                send_next = 0;
+                debug_hook(DBG_YM2612, ym2612_buf);
+                sprintf(ym2612_buf, template);
+            }
+
+            // Send one write after key-on/key-off event OR when close to max capacity
+            if (value == 0x28 || strlen(ym2612_buf) > 1900)
+            {
+                send_next = 1;
+            }
+        }
+        break;
+
     case HOOK_M68K_E:
     {
         unsigned short opc = m68k_read_immediate_16(m68k.prev_pc);
@@ -212,7 +257,7 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
         if (dbg_paused)
         {
             dbg_paused = 0;
-            debug_hook(DBG_STEP);
+            debug_hook(DBG_STEP, NULL);
             // Jump to main SDL loop
             longjmp(jmp_env, 1);
         }
@@ -231,7 +276,7 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
     }
 }
 
-void set_debug_hook(void (*hook)(dbg_event_t type))
+void set_debug_hook(void (*hook)(dbg_event_t type, void *data))
 {
     debug_hook = hook;
 }

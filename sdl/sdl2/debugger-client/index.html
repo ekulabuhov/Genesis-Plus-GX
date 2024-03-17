@@ -14,6 +14,7 @@
     <link href="asm-viewer/asm-viewer.css" rel="stylesheet" />
     <link href="sprite-viewer/sprite-viewer.css" rel="stylesheet" />
     <link href="register-viewer/register-viewer.css" rel="stylesheet" />
+    <link href="ym2612/ym2612.css" rel="stylesheet" />
     <script type="module" src="index.js"></script>
   </head>
   <body
@@ -21,7 +22,8 @@
     ng-controller="RegController as $ctrl"
     style="height: 100vh"
   >
-    <div class="row h-100">
+    <ym-2612></ym-2612>
+    <div class="d-none row h-100">
       <div class="col" id="header">
         <h1>Debugger</h1>
         <div class="d-flex justify-content-between mb-3">

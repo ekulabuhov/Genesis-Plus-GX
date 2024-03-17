@@ -67,6 +67,8 @@ export class WsService {
         type |= 16;
       } else if (bpt.type === "cram") {
         type |= 64;
+      } else if (bpt.type === "z80") {
+        type |= 2048;
       }
     }
 

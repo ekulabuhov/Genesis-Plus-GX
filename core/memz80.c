@@ -136,6 +136,11 @@ unsigned char z80_memory_r(unsigned int address)
 
 void z80_memory_w(unsigned int address, unsigned char data)
 {
+  #ifdef HOOK_CPU
+  if (cpu_hook)
+    cpu_hook(HOOK_Z80_W, 1, address, data);
+  #endif
+
   switch((address >> 13) & 7)
   {
     case 0: /* $0000-$3FFF: Z80 RAM (8K mirrored) */
