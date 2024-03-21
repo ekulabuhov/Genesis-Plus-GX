@@ -8,17 +8,19 @@ export class MemoryViewerController {
   hovered;
   // Starting address
   address = 0;
-  /** @type {'rom' | 'vram' | 'cram'} */
+  /** @type {'rom' | 'vram' | 'cram' | 'z80'} */
   selectedMemType = "rom";
   /** @type {HTMLDivElement} */
   view;
   $scope;
   memorySize = {
     "rom": 0x400000,
+    "z80": 0x2000,
     "vram": 0x10000,
     "cram": 0x80
   };
   lazyLoadTimeoutId;
+  topOffset = 0;
 
   /**
    * @param {import("angular").IAugmentedJQuery} $element
@@ -88,12 +90,12 @@ export class MemoryViewerController {
       // Load 2 screens above current screen
       // Load 1 currently visible screen
       // Load 2 screens below current screen
-      const address = Math.max(0, currentMemoryAddress - visibleLines * 16 * 2);
+      const address = Math.max(0, currentMemoryAddress - visibleLines * 16 * 2) + this.topOffset;
       const size = visibleLines * 16 * 5;
       console.log(`loading from ${address.toString(16)} to ${(address+size).toString(16)}`)
       const response = await WsService.showMemoryLocation(
         address,
-        Math.min(size, this.memorySize[this.selectedMemType] - address),
+        Math.min(size, this.memorySize[this.selectedMemType] - (address - this.topOffset)),
         this.selectedMemType
       );
       this.memory = response.data;
@@ -202,6 +204,11 @@ export class MemoryViewerController {
   }
 
   onSelectMemType() {
+    this.topOffset = 0;
+    if (this.selectedMemType === 'z80') {
+      this.topOffset = 0xA00000;
+    }
+
     this.view.scroll(0, 0);
     this.#lazyLoad();
   }
@@ -210,7 +217,8 @@ export class MemoryViewerController {
 export const MemoryViewerComponent = {
   template: `
     <select class="form-select border-0 shadow-none" ng-model="$ctrl.selectedMemType" ng-change="$ctrl.onSelectMemType()">
-      <option value="rom">ROM</option>
+      <option value="rom">Cartridge ROM [$000000-$3FFFFF]</option>
+      <option value="z80">Z80 memory space [$A00000-$A0FFFF]</option>
       <option value="vram">VRAM</option>
       <option value="cram">CRAM</option>
     </select>
@@ -223,7 +231,7 @@ export const MemoryViewerComponent = {
     </div>
     <div class="h-100 memory-view overflow-y-auto">
       <div class="memory-window position-relative" style="height: calc({{$ctrl.memorySize[$ctrl.selectedMemType]}} / 16 * 24px)">
-        <div class="memory-row position-absolute" style="top: {{($ctrl.address / 16 + lineIndex) * 24}}px" ng-repeat="line in $ctrl.memory track by $index" ng-init="lineIndex=$index">
+        <div class="memory-row position-absolute" style="top: {{(($ctrl.address - $ctrl.topOffset) / 16 + lineIndex) * 24}}px" ng-repeat="line in $ctrl.memory track by $index" ng-init="lineIndex=$index">
             <div class="address">
                 {{($ctrl.address + lineIndex * 16).toString(16).toUpperCase().padStart(8, "0")}}
             </div>

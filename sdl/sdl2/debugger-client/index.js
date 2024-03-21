@@ -153,4 +153,9 @@ document.onkeydown = function (e) {
     const response = prompt("Go to where?");
     WsService.asmViewer.showAsm(response);
   }
+
+  if (e.key === 'ArrowLeft' && e.metaKey) {
+    e.preventDefault();
+    WsService.asmViewer.goBack();
+  }
 };

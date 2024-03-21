@@ -292,7 +292,15 @@ struct {
 
 static Uint32 sdl_sync_timer_callback(Uint32 interval, void *param)
 {
-  SDL_SemPost(sdl_sync.sem_sync);
+  // Allow sound system to catch up
+  if (sdl_sound.current_emulated_samples > 10000) {
+    return interval;
+  }
+
+  uint32 sem_val = SDL_SemValue(sdl_sync.sem_sync);
+  if (sem_val == 0) {
+    SDL_SemPost(sdl_sync.sem_sync);
+  }
   sdl_sync.ticks++;
   if (sdl_sync.ticks == (vdp_pal ? 50 : 20))
   {

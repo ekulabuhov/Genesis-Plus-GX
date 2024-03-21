@@ -7,6 +7,8 @@ export class MenuService {
    * @param {{ label: string; click: () => void; }[]} [menuOptions]
    */
   showMenu(event, menuOptions) {
+    event.preventDefault();
+    event.stopPropagation();
     this.component.show(event, menuOptions)
   }
 }

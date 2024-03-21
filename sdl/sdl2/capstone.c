@@ -39,6 +39,8 @@ struct SqlResult run_sql(const char *sql, ...)
         sqlite3_free(zErrMsg);
     }
 
+    free(sql_formatted);
+
     struct SqlResult r = {.aResult = aResult, .nRow = nRow, .nCol = nCol};
     return r;
 }
@@ -48,7 +50,7 @@ void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **mess
     struct SqlResult count = run_sql("select count(*) from instructions");
 
     if (address) {
-        struct SqlResult rowNum = run_sql("select rowNum from (SELECT address, row_number() OVER (ORDER BY address) AS rowNum FROM instructions) t where t.address = %d", address);
+        struct SqlResult rowNum = run_sql("select rowNum from (SELECT address, row_number() OVER (ORDER BY address) AS rowNum FROM instructions) t where t.address >= %d LIMIT 1", address);
         index = atoi(rowNum.aResult[1]);
         sqlite3_free_table(rowNum.aResult);
     }
@@ -125,4 +127,8 @@ char *funcs(void)
     group by f.start_address\
     ORDER BY f.start_address) t");
     return result.aResult[1];
+}
+
+void create_label(uint32_t address, char *name) {
+    run_sql("INSERT OR REPLACE INTO labels (address, name) VALUES ('%X', '%s')", address, name);
 }

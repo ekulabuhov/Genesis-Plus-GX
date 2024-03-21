@@ -299,6 +299,10 @@ unsigned char read_memory_byte(unsigned int address, char *type)
         {
             return read_cram_byte(cram, address);
         }
+        else if (strcmp(type, "z80") == 0)
+        {
+            return zram[address - 0xA00000];
+        }
     }
 
     return m68ki_read_8(address);
@@ -306,6 +310,10 @@ unsigned char read_memory_byte(unsigned int address, char *type)
 
 void write_memory_byte(unsigned int address, unsigned int value)
 {
+    if (address >= 0xA04000 && address <= 0xA04003) {
+        z80_memory_w(address-0xA00000, value);
+    }
+
     // We can't use m68ki_write_8 as it won't allow us to write to regions where CPU is not allowed to write (e.g. ROM)
     cpu_memory_map *temp = &m68k.memory_map[((address) >> 16) & 0xff];
     WRITE_BYTE(temp->base, (address) & 0xffff, value);

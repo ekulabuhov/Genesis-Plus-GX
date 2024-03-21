@@ -20,7 +20,7 @@ export class WsService {
    *
    * @param {eventTypes} event
    */
-  static _callListeners(event, data) {
+  static #callListeners(event, data) {
     this.listeners[event]?.forEach((handler) => handler(data));
   }
 
@@ -29,15 +29,15 @@ export class WsService {
     /* Do connection. */
     const ws = (this.ws = window["ws"] = new WebSocket(addr));
     ws.onopen = () => {
-      this._callListeners("open");
+      this.#callListeners("open");
     };
     ws.onclose = () => {
-      this._callListeners("close");
+      this.#callListeners("close");
     };
     ws.onmessage = (evt) => {
       const response = JSON.parse(evt.data);
-      this._callListeners("message", response);
-      this._onMessage(response);
+      this.#callListeners("message", response);
+      this.#onMessage(response);
     };
   }
 
@@ -104,10 +104,29 @@ export class WsService {
     return this.sendMessage(`mem ${address} ${size} ${type}`);
   }
 
+  /**
+   * @typedef {Object} instruction
+   * @prop {number} address - position of the instruction
+   * @prop {string} mnemonic - instruction name (e.g. 'jsr')
+   * @prop {string} [op_1] - value of the first operand (e.g. 'CD8')
+   * @prop {string} op_str - label of the first operand (e.g. 'FUN_copyDataToRam')
+   * 
+   * @typedef {Object} getAsmResponse
+   * @prop {number} count - total instruction count
+   * @prop {number} index
+   * @prop {'asm'} type
+   * @prop {instruction[]} data
+   * 
+   * @returns {Promise<getAsmResponse>}
+   */
   static getAsm(address) {
     return this.sendMessage(`asm ${address} 0 100`);
   }
 
+  /**
+   * Sends a message. Doesn't expect a reply. Use sendMessage if you need to wait for reply.
+   * @param {string} message 
+   */
   static send(message) {
     this.ws.send(message);
   }
@@ -123,7 +142,7 @@ export class WsService {
     });
   }
 
-  static _onMessage(data) {
+  static #onMessage(data) {
     const resolve = this.waiting.shift();
     if (resolve) {
       resolve(data);

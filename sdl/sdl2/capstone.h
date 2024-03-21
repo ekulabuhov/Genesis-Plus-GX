@@ -11,6 +11,7 @@ typedef struct {
 } fam;
 void fam_append(fam *fam1, int value);
 fam *get_functions(void);
+void create_label(uint32_t address, char *name);
 
 struct SqlResult run_sql(const char *sql, ...);
 

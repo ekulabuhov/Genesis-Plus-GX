@@ -211,9 +211,22 @@ void onmessage(ws_cli_conn_t *client,
 		clear_bpt_list();
 	}
 
+	// Format: "fn name <address> <name>"
+	if (strstr((const char *)msg, "fn name ") == (const char *)msg)
+	{
+		strtok((char *)msg, " ");
+		strtok(NULL, " "); // Skip "name"
+
+		uint32_t address = read_number_token();
+		char *name = strtok(NULL, " ");
+
+		create_label(address, name);
+	}
+
 	if (message != NULL)
 	{
 		ws_sendframe_txt(client, message);
+		free(message);
 	}
 }
 
