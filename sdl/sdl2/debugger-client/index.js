@@ -84,7 +84,6 @@ appModule.controller(
 
         if (response.type === "asm") {
           this.asm = response.data;
-          this.firstInstructionIndex = response.index;
           this.totalInstructionCount = response.count;
         }
 
@@ -149,12 +148,12 @@ document.onkeydown = function (e) {
     WsService.send(`step`);
   }
 
-  if (e.key === 'g') {
+  if (e.key === 'g' && e.metaKey) {
     const response = prompt("Go to where?");
     WsService.asmViewer.showAsm(response);
   }
 
-  if (e.key === 'ArrowLeft' && e.metaKey) {
+  if (e.key === 'ArrowLeft' && e.metaKey && e.target.nodeName !== 'INPUT') {
     e.preventDefault();
     WsService.asmViewer.goBack();
   }

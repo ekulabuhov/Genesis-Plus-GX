@@ -8,25 +8,33 @@ export class MemoryViewerController {
   hovered;
   // Starting address
   address = 0;
-  /** @type {'rom' | 'vram' | 'cram' | 'z80'} */
+  /** 
+   * @typedef {'rom' | 'vram' | 'cram' | 'z80' | 'ram'} memTypes
+   * 
+   * @type {memTypes}
+  */
   selectedMemType = "rom";
   /** @type {HTMLDivElement} */
   view;
   $scope;
   memorySize = {
     "rom": 0x400000,
+    "ram": 0x10000,
     "z80": 0x2000,
     "vram": 0x10000,
-    "cram": 0x80
+    "cram": 0x80,
   };
   lazyLoadTimeoutId;
   topOffset = 0;
+  /** @type {import('../menu/menu.service').MenuService}*/
+  menuService;
 
   /**
    * @param {import("angular").IAugmentedJQuery} $element
    */
-  constructor($element, $scope) {
+  constructor($element, $scope, menuService) {
     WsService.memoryViewer = this;
+    this.menuService = menuService;
 
     $element.on("mouseleave", () => {
       this.hovered = undefined;
@@ -196,21 +204,53 @@ export class MemoryViewerController {
     }
   }
 
+  /**
+   * @param {string} address
+   * @param {memTypes} type
+   */
   showMemoryLocation(address, type) {
     const alignedAddress = address.slice(0, address.length - 1) + "0";
     this.selectedMemType = type;
-    this.view.scroll(0, parseInt(alignedAddress) / 16 * 24);
+    this.setTopOffset();
+
+    this.view.scroll(0, (parseInt(alignedAddress) - this.topOffset) / 16 * 24);
     this.selected = parseInt(address);
   }
 
-  onSelectMemType() {
+  setTopOffset() {
     this.topOffset = 0;
     if (this.selectedMemType === 'z80') {
       this.topOffset = 0xA00000;
     }
 
+    if (this.selectedMemType === 'ram') {
+      this.topOffset = 0xFF0000;
+    }
+  }
+
+  onSelectMemType() {
+    this.setTopOffset();
+
     this.view.scroll(0, 0);
     this.#lazyLoad();
+  }
+
+  onContextMenu(event) {
+    if (event.which !== 3) {
+      return;
+    }
+
+    this.menuService.showMenu(event, [
+      {
+        label: "Go to...",
+        click: () => {
+          const address = prompt("Go to where?");
+          if (address) {
+            this.showMemoryLocation(address, this.selectedMemType);
+          }
+        }
+      }
+    ]);
   }
 }
 
@@ -218,6 +258,7 @@ export const MemoryViewerComponent = {
   template: `
     <select class="form-select border-0 shadow-none" ng-model="$ctrl.selectedMemType" ng-change="$ctrl.onSelectMemType()">
       <option value="rom">Cartridge ROM [$000000-$3FFFFF]</option>
+      <option value="ram">68000 RAM [$FF0000-$FFFFFF]</option>
       <option value="z80">Z80 memory space [$A00000-$A0FFFF]</option>
       <option value="vram">VRAM</option>
       <option value="cram">CRAM</option>
@@ -229,7 +270,10 @@ export const MemoryViewerComponent = {
       </div>
       <div class="ascii-values">Decoded Text</div>
     </div>
-    <div class="h-100 memory-view overflow-y-auto">
+    <div class="h-100 memory-view overflow-y-auto" 
+      ng-mousedown="$ctrl.onContextMenu($event)"
+      oncontextmenu="return false"
+    >
       <div class="memory-window position-relative" style="height: calc({{$ctrl.memorySize[$ctrl.selectedMemType]}} / 16 * 24px)">
         <div class="memory-row position-absolute" style="top: {{(($ctrl.address - $ctrl.topOffset) / 16 + lineIndex) * 24}}px" ng-repeat="line in $ctrl.memory track by $index" ng-init="lineIndex=$index">
             <div class="address">

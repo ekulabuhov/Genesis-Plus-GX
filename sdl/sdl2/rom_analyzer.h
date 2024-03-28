@@ -3,6 +3,6 @@
 #define _ROM_ANALYZER_H_
 
 typedef unsigned char *(*rom_reader)(unsigned int length, unsigned int address);
-int extract_functions(int length, int address, rom_reader read_rom);
+int extract_functions(int referenced_from, int address, rom_reader read_rom);
 
 #endif /* _ROM_ANALYZER_H_ */

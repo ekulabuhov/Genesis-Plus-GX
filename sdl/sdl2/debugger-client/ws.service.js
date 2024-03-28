@@ -117,10 +117,14 @@ export class WsService {
    * @prop {'asm'} type
    * @prop {instruction[]} data
    * 
+   * @param {Object} param0 
+   * @param {string|number} [param0.address='0'] 
+   * @param {string|number} [param0.index='0'] 
+   * 
    * @returns {Promise<getAsmResponse>}
    */
-  static getAsm(address) {
-    return this.sendMessage(`asm ${address} 0 100`);
+  static getAsm({ address = '0', index = '0' }) {
+    return this.sendMessage(`asm ${address} ${index} 100`);
   }
 
   /**

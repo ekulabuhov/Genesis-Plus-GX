@@ -47,7 +47,7 @@ export const RegisterViewerComponent = {
     </div>`,
   bindings: {
     regs: "<",
-    onViewMemory: "&"
+    onViewMemory: "&",
   },
   controller: class RegisterViewerController {
     regLabels = [
@@ -151,23 +151,30 @@ export const RegisterViewerComponent = {
 
       event.preventDefault();
 
-      const displayValue = displayHex(
-        this.regs[reg.toLowerCase()]
-      )
+      const displayValue = displayHex(this.regs[reg.toLowerCase()]);
 
       const menu = [
         {
           label: `View in memory viewer (${displayValue})`,
           click: () => {
-            this.onViewMemory({ address: this.regs[reg], type: "rom" });
+            let type = "rom";
+            let regVal = this.regs[reg.toLowerCase()];
+            regVal = regVal < 0 ? 0x1000000 + regVal : regVal;
+            if (regVal <= 0x3fffff) {
+              type = "rom";
+            } else if (regVal >= 0xff0000 && regVal <= 0xffffff) {
+              type = "ram";
+            }
+
+            this.onViewMemory({ address: '0x' + regVal.toString(16), type });
           },
         },
         {
           label: `View in disassembler (${displayValue})`,
           click: () => {
             WsService.asmViewer.showAsm(this.regs[reg]);
-          }
-        }
+          },
+        },
       ];
 
       this.menuService.showMenu(event, menu);

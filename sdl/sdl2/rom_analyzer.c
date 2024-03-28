@@ -6,6 +6,8 @@
 #include "capstone.h"
 #include "rom_analyzer.h"
 
+#define LENGTH 0x100
+
 struct Tuple
 {
     int bra_destination;
@@ -23,9 +25,13 @@ struct Function
 {
     int start_address;
     int end_address;
+    int referenced_from;
     struct FromTo *functions;
     int function_count;
     int function_size;
+
+    cs_insn **instructions;
+    int instruction_count;
 };
 
 struct FromTo *visited_branches = NULL;
@@ -51,17 +57,25 @@ void add_function(struct Function *f, int from, int to)
     x->to = to;
 }
 
-struct Tuple find_rts(int length, int address, const unsigned char *code, csh handle, struct Function *f)
+struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct Function *f)
 {
     cs_insn *insn;
-    int count = cs_disasm(handle, code, length, address, 0, &insn);
+    int count = cs_disasm(handle, code, LENGTH, address, 0, &insn);
     printf("count: %d, code: %d\n", count, sizeof(code));
 
     struct Tuple r = {.return_address = 0};
     cs_insn last_instruction = insn[count - 1];
     r.last_address = last_instruction.address + last_instruction.size;
 
-    bool fully_decoded = (r.last_address + 4) >= address + length;
+    f->instruction_count += (count - 1);
+    int new_size = sizeof(f->instructions[0]) * (f->instruction_count);
+    f->instructions = realloc(f->instructions, new_size);
+    for (size_t i = 0; i < (count - 1); i++)
+    {
+        f->instructions[f->instruction_count - (count - 1) + i] = &insn[i];
+    }
+
+    bool fully_decoded = (r.last_address + 4) >= address + LENGTH;
     if (fully_decoded)
     {
         // Discard last instruction as it might be incomplete
@@ -79,32 +93,6 @@ struct Tuple find_rts(int length, int address, const unsigned char *code, csh ha
         //        bytesAsString[charsWritten - 1] = 0;
 
         printf("%02X: %s\t%s, %s\n", insn[i].address, bytesAsString, insn[i].mnemonic, insn[i].op_str);
-        if (fully_decoded || i < (count - 1))
-        {
-            char *op_1 = malloc(10);
-            sprintf(op_1, "NULL");
-            int jump_to = 0;
-            if (strstr(insn[i].mnemonic, "jsr") == insn[i].mnemonic)
-            {
-                switch (insn[i].detail->m68k.operands[0].address_mode)
-                {
-                case M68K_AM_ABSOLUTE_DATA_LONG:
-                case M68K_AM_ABSOLUTE_DATA_SHORT:
-                    jump_to = insn[i].detail->m68k.operands[0].imm;
-                    break;
-                case M68K_AM_PCI_DISP:
-                    jump_to = insn[i].address + insn[i].detail->m68k.operands[0].mem.disp + 2;
-                    break;
-                }
-
-                if (jump_to) {
-                    sprintf(op_1, "'%X'", jump_to);
-                }
-            }
-             
-            run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\", size, op_1) VALUES ('%d', '%s', '%s', '%d', %s)\n",
-                    insn[i].address, insn[i].mnemonic, insn[i].op_str, insn[i].size, op_1);
-        }
 
         if (strstr(insn[i].mnemonic, "dbra") == insn[i].mnemonic)
         {
@@ -189,6 +177,12 @@ struct Tuple find_rts(int length, int address, const unsigned char *code, csh ha
 
             add_function(f, insn[i].address, jump_to);
 
+            // There's a branch after jmp
+            if (r.bra_destination > insn[i].address)
+            {
+                continue;
+            }
+
             // This is the last instruction in this function
             return r;
         }
@@ -219,6 +213,15 @@ struct Tuple find_rts(int length, int address, const unsigned char *code, csh ha
             }
 
             add_function(f, insn[i].address, jump_to);
+        }
+
+        // Bcc
+        if (insn[i].bytes[0] >> 4 == 6)
+        {
+            int jump_to = insn[i].address + insn[i].detail->m68k.operands[0].br_disp.disp + 2;
+            printf("%s detected at %02X, jumps to %02X\n", insn[i].mnemonic, insn[i].address, jump_to);
+
+            r.bra_destination = jump_to;
         }
     }
 
@@ -274,20 +277,42 @@ unsigned char *read_from_file(unsigned int length, unsigned int address)
     return code;
 }
 
-struct Function extract_function(int length, int address, csh handle, rom_reader read_rom)
+csh handle;
+
+struct Function extract_function(int referenced_from, int address, rom_reader read_rom)
 {
-    struct Function f = {.start_address = address, .function_count = 0, .function_size = 0, .functions = NULL};
+    struct Function f = {.start_address = address, .referenced_from = referenced_from, .function_count = 0, .function_size = 0, .functions = NULL};
+
+    if (handle == 0)
+    {
+        if (cs_open(CS_ARCH_M68K, CS_MODE_M68K_000, &handle) != CS_ERR_OK)
+            return f;
+
+        if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
+            return f;
+    }
+
     struct Tuple r;
     do
     {
-        const unsigned char *code = read_rom(length, address);
+        const unsigned char *code = read_rom(LENGTH, address);
 
-        r = find_rts(length, address, code, handle, &f);
+        r = find_rts(address, code, handle, &f);
         printf("found la %02X, bd %02X\n", r.last_address, r.bra_destination);
         address = r.last_address;
     } while (r.return_address == 0);
 
     f.end_address = r.return_address;
+
+    for (size_t i = f.instruction_count - 1; i > 0; i--)
+    {
+        if (f.instructions[i]->address == f.end_address)
+        {
+            f.instruction_count = i + 1;
+            break;
+        }
+    }
+
     return f;
 }
 
@@ -301,20 +326,55 @@ void dump_visited_branches(void)
     printf("]\n");
 }
 
-csh handle;
-fam *extracted_functions;
-
-int extract_functions(int length, int address, rom_reader read_rom)
+void store_in_db(struct Function f)
 {
-    if (handle == 0)
-    {
-        if (cs_open(CS_ARCH_M68K, CS_MODE_M68K_000, &handle) != CS_ERR_OK)
-            return -1;
+    run_sql("INSERT INTO  \"functions\" (\"start_address\", \"end_address\") VALUES ('%d', '%d')\n", f.start_address,
+            f.end_address);
 
-        if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
-            return -1;
+    for (size_t i = 0; i < f.instruction_count; i++)
+    {
+        cs_insn insn = *f.instructions[i];
+        char op_1[10];
+        sprintf(op_1, "NULL");
+        int jump_to = 0;
+        if ((strstr(insn.mnemonic, "jsr") == insn.mnemonic) ||
+            (strstr(insn.mnemonic, "jmp") == insn.mnemonic))
+        {
+            switch (insn.detail->m68k.operands[0].address_mode)
+            {
+            case M68K_AM_ABSOLUTE_DATA_LONG:
+            case M68K_AM_ABSOLUTE_DATA_SHORT:
+                jump_to = insn.detail->m68k.operands[0].imm;
+                break;
+            case M68K_AM_PCI_DISP:
+                jump_to = insn.address + insn.detail->m68k.operands[0].mem.disp + 2;
+                break;
+            }
+
+            if (jump_to)
+            {
+                sprintf(op_1, "'%X'", jump_to);
+            }
+        }
+
+        run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\", size, op_1) VALUES ('%d', '%s', '%s', '%d', %s)\n",
+                insn.address, insn.mnemonic, insn.op_str, insn.size, op_1);
     }
 
+    run_sql("INSERT INTO jump_tables (instruction_address, function_start_address)"\
+        "VALUES ('%d', '%d')", f.referenced_from, f.start_address);
+
+    for (size_t i = 0; i < f.function_count; i++)
+    {
+        run_sql("INSERT INTO jump_tables (instruction_address, function_start_address)"\
+        "VALUES ('%d', '%d')", f.functions[i].from, f.functions[i].to);
+    }
+}
+
+fam *extracted_functions;
+
+int extract_functions(int referenced_from, int address, rom_reader read_rom)
+{
     if (extracted_functions == NULL)
     {
         extracted_functions = get_functions();
@@ -328,10 +388,11 @@ int extract_functions(int length, int address, rom_reader read_rom)
         dump_visited_branches();
     }
 
-    struct Function f = extract_function(length, address, handle, read_rom);
+    struct Function f = extract_function(referenced_from, address, read_rom);
     printf("found function %02X to %02X with %d branches\n", f.start_address, f.end_address, f.function_count);
-    run_sql("INSERT INTO  \"functions\" (\"start_address\", \"end_address\") VALUES ('%d', '%d')\n", f.start_address,
-            f.end_address);
+
+    store_in_db(f);
+
     for (int i = 0; i < f.function_count; i++)
     {
         printf("found branching function from %02X to %02X\n", f.functions[i].from, f.functions[i].to);
@@ -361,14 +422,22 @@ int extract_functions(int length, int address, rom_reader read_rom)
             dump_visited_branches();
         }
 
-        extract_functions(length, f.functions[i].to, read_rom);
+        extract_functions(f.functions[i].from, f.functions[i].to, read_rom);
     }
 
     return 0;
 }
 
+uint32_t endian_swap(uint32_t x)
+{
+    return (x >> 24) |
+           ((x << 8) & 0x00FF0000) |
+           ((x >> 8) & 0x0000FF00) |
+           (x << 24);
+}
+
 // Call this to populate database with byte placeholders
-void populate_data(FILE *pFile, int address, int length)
+void populate_data(FILE *pFile, int address, int length, int size)
 {
     unsigned char *code = malloc(length);
     printf("reading %d bytes at %02X\n", length, address);
@@ -380,19 +449,19 @@ void populate_data(FILE *pFile, int address, int length)
     int result = fread(code, 1, length, pFile);
     printf("read %d bytes\n", result);
 
-    for (int i = 0; i < length; i++)
-    {
-        run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\") VALUES ('%d', '%s', '%02X');",
-                i, "dc.b", code[i]);
-    }
-}
+    char sizeCode = 'b';
 
-uint32_t endian_swap(uint32_t x)
-{
-    return (x >> 24) |
-           ((x << 8) & 0x00FF0000) |
-           ((x >> 8) & 0x0000FF00) |
-           (x << 24);
+    if (size == 2) {
+        sizeCode = 'w';
+    } else if (size == 4) {
+        sizeCode = 'l';
+    }
+
+    for (int i = 0; i < length; i+=size)
+    {
+        run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\") VALUES ('%d', 'dc.%c', '%02X');",
+                i, sizeCode, endian_swap(*((uint32_t *)code + (i/size))));
+    }
 }
 
 static uint32_t read_rom_uint(FILE *pFile, uint32_t address)
@@ -409,6 +478,21 @@ static uint32_t read_rom_uint(FILE *pFile, uint32_t address)
     return endian_swap(value);
 }
 
+rom_reader init_file_reader()
+{
+    pFile = fopen("Dune - The Battle for Arrakis (U) [!].gen", "rb");
+    if (pFile == NULL)
+    {
+        fputs("File error", stderr);
+        exit(1);
+    }
+
+    int length = 0x100;
+    code = malloc(length);
+
+    return read_from_file;
+}
+
 #ifdef OWN_APP
 sqlite3 *db;
 int main(int argc, char **argv)
@@ -423,27 +507,23 @@ int main(int argc, char **argv)
     printf("db connected\n");
     run_sql("DELETE FROM \"instructions\";");
     run_sql("DELETE FROM \"functions\";");
+    run_sql("DELETE FROM \"jump_tables\";");
 
-    pFile = fopen("Dune - The Battle for Arrakis (U) [!].gen", "rb");
-    if (pFile == NULL)
-    {
-        fputs("File error", stderr);
-        exit(1);
-    }
+    init_file_reader();
 
-    int length = 0x100;
-    code = malloc(length);
+    // First 256 bytes contain different vectors
+    populate_data(pFile, 0, 0x100, 4);
 
     uint32_t entry_point = read_rom_uint(pFile, 0x4);
     uint32_t irq_l6 = read_rom_uint(pFile, 0x78);
 
     struct FromTo start = {.to = entry_point, .from = 0};
     add_visited_branch(start);
-    extract_functions(length, entry_point, read_from_file);
+    extract_functions(0x4, entry_point, read_from_file);
 
     struct FromTo start2 = {.to = irq_l6, .from = 0};
     add_visited_branch(start2);
-    extract_functions(length, irq_l6, read_from_file);
+    extract_functions(0x78, irq_l6, read_from_file);
 
     sqlite3_close(db);
     return 0;

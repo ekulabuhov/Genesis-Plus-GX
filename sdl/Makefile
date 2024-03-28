@@ -24,7 +24,9 @@ LIBS += -lsqlite3
 OBJDIR = ./build_rom_analyzer
 
 OBJECTS	=       $(OBJDIR)/rom_analyzer.o \
-	$(OBJDIR)/capstone.o
+	$(OBJDIR)/capstone.o \
+	$(OBJDIR)/rom_analyzer_tests.o \
+	$(OBJDIR)/munit.o
 
 all: $(NAME)
 
@@ -37,5 +39,20 @@ $(OBJDIR) :
 $(OBJDIR)/%.o :	$(SRCDIR)/../sdl/sdl2/%.c $(SRCDIR)/../sdl/sdl2/%.h	        
 		$(CC) -c $(CFLAGS) $(INCLUDES) $(DEFINES) $< -o $@
 
+$(OBJDIR)/%.o :	$(SRCDIR)/../sdl/sdl2/munit/%.c $(SRCDIR)/../sdl/sdl2/munit/%.h	        
+		$(CC) -c $(CFLAGS) $(INCLUDES) $(DEFINES) $< -o $@
+
 clean:
 	rm -f $(OBJECTS) $(NAME)
+
+dune:
+	./gen_sdl2 "Dune - The Battle for Arrakis (U) [!].gen"
+
+emu:
+	@make -f Makefile.sdl2
+
+leaks:
+	@leaks --atExit -- ./gen_sdl2 "Dune - The Battle for Arrakis (U) [\!].gen" > leaks.log
+
+tests: DEFINES = -DTEST_APP
+tests: all

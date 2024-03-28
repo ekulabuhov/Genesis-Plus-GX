@@ -144,6 +144,7 @@ static struct timespec start, end;
 static char *ym2612_buf;
 static int send_next = 0;
 const char* template = "{ \"type\": \"ym2612\", \"data\": [";
+static uint prev_pc = 0;
 
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
@@ -156,47 +157,12 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
     {
     case HOOK_Z80_W:
         // Collects and sends YM2612 note-on events to frontend for visualization
-        if (address >= 0x4000 && address <= 0x4003)
-        {
-            if (ym2612_buf == NULL)
-            {
-                ym2612_buf = malloc(2000);
-                sprintf(ym2612_buf, template);
-            }
-
-            uint64_t diff_in_ms = 0;
-
-            // Capture time difference between previous key-on/key-off to track how much time has passed
-            if (value == 0x28)
-            {
-                clock_gettime(CLOCK_MONOTONIC_RAW, &end);
-                if (start.tv_sec != 0) {
-                    diff_in_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
-                }
-                clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-            }
-
-            char *lastChar = send_next ? "]}" : ",";
-            sprintf(ym2612_buf + strlen(ym2612_buf), "[%llu, %X, \"%X\"]%s", diff_in_ms, address & 3, value, lastChar);
-
-            if (send_next)
-            {
-                send_next = 0;
-                debug_hook(DBG_YM2612, ym2612_buf);
-                sprintf(ym2612_buf, template);
-            }
-
-            // Send one write after key-on/key-off event OR when close to max capacity
-            if (value == 0x28 || strlen(ym2612_buf) > 1900)
-            {
-                send_next = 1;
-            }
-        }
+        visualize_ym2612(address, value);
         break;
 
     case HOOK_M68K_E:
     {
-        unsigned short opc = m68k_read_immediate_16(m68k.prev_pc);
+        unsigned short opc = m68k_read_immediate_16(prev_pc);
         int is_jsr = (opc >> 6) == 314;
         int is_jmp = (opc >> 6) == 315;
         if (is_jsr || is_jmp)
@@ -204,11 +170,11 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
 
             if (is_jsr)
             {
-                printf("jump to subroutine from %04X to %04X\n", m68k.prev_pc, m68k.pc);
+                printf("jump to subroutine from %04X to %04X\n", prev_pc, m68k.pc);
             }
             else
             {
-                printf("jump from %04X to %04X\n", m68k.prev_pc, m68k.pc);
+                printf("jump from %04X to %04X\n", prev_pc, m68k.pc);
             }
 
             int function_found = 0;
@@ -229,7 +195,7 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
             {
                 printf("new function %04X\n", m68k.pc);
                 fam_append(extracted_functions, m68k.pc);
-                extract_functions(0x100, m68k.pc, read_memory);
+                extract_functions(prev_pc, m68k.pc, read_memory);
             }
         }
     }
@@ -269,10 +235,56 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
             break;
         }
 
+        prev_pc = m68k.pc;
+
         break;
     default:
         check_breakpoint(type, width, address, value);
         break;
+    }
+}
+
+void visualize_ym2612(unsigned int address, unsigned int value)
+{
+    // Disabled for now, create a way to enable on demand
+    return;
+
+    if (address >= 0x4000 && address <= 0x4003)
+    {
+        if (ym2612_buf == NULL)
+        {
+            ym2612_buf = malloc(2000);
+            sprintf(ym2612_buf, template);
+        }
+
+        uint64_t diff_in_ms = 0;
+
+        // Capture time difference between previous key-on/key-off to track how much time has passed
+        if (value == 0x28)
+        {
+            clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+            if (start.tv_sec != 0)
+            {
+                diff_in_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+            }
+            clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+        }
+
+        char *lastChar = send_next ? "]}" : ",";
+        sprintf(ym2612_buf + strlen(ym2612_buf), "[%llu, %X, \"%X\"]%s", diff_in_ms, address & 3, value, lastChar);
+
+        if (send_next)
+        {
+            send_next = 0;
+            debug_hook(DBG_YM2612, ym2612_buf);
+            sprintf(ym2612_buf, template);
+        }
+
+        // Send one write after key-on/key-off event OR when close to max capacity
+        if (value == 0x28 || strlen(ym2612_buf) > 1900)
+        {
+            send_next = 1;
+        }
     }
 }
 

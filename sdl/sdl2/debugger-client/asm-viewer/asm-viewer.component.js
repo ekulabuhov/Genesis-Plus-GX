@@ -30,16 +30,35 @@ export class AsmViewerController {
   /** @type {import("../menu/menu.service.js").MenuService} */
   menuService;
   /**
-   * @type {number[]}
+   * Records scroll offsets when navigation occurs e.g. "Show disassembly".
+   * Is used when Cmd+LeftArrow is pressed to navigate back
+   * @type {string[]}
    */
   scrollHistory = [];
+  // Is set only when asm is requested by PC change
+  waitingForAsm = false;
 
-  constructor(menuService) {
+  /**
+   *
+   * @param {*} menuService
+   * @param {import("angular").IScope} $scope
+   */
+  constructor(menuService, $scope) {
     this.menuService = menuService;
     WsService.asmViewer = this;
 
     WsService.on("open", async () => {
       this.funcs = await WsService.sendMessage("funcs");
+    });
+
+    WsService.on("message", (data) => {
+      if (data.type === "asm") {
+        const labelCount =
+          this.funcs.findLastIndex(
+            (func) => func.start_address < data.data[0].address
+          ) + 1;
+        this.firstInstructionIndex = data.index + labelCount;
+      }
     });
 
     const el = this.disasmWindow;
@@ -49,15 +68,16 @@ export class AsmViewerController {
       }
 
       const firstTop = this.firstInstructionIndex * 24;
+      const currentInstructionIdx = Math.ceil(el.scrollTop / 24) + 1;
       if (
         el.scrollTop < firstTop + el.clientHeight * 2 &&
-        this.asm[0].address !== 0
+        currentInstructionIdx < this.firstInstructionIndex
       ) {
         console.log("should load up");
         this.stopScrollEvents = true;
         setTimeout(() => {
           const currentInstructionIdx = Math.ceil(el.scrollTop / 24);
-          this.ws.send(`asm 0 ${Math.max(1, currentInstructionIdx)} 100`);
+          WsService.getAsm({ index: Math.max(1, currentInstructionIdx) });
         }, 500);
       }
 
@@ -67,7 +87,7 @@ export class AsmViewerController {
         this.stopScrollEvents = true;
         setTimeout(() => {
           const currentInstructionIdx = Math.ceil(el.scrollTop / 24 + 12);
-          this.ws.send(`asm 0 ${currentInstructionIdx} 100`);
+          WsService.getAsm({ index: currentInstructionIdx });
         }, 500);
       }
     };
@@ -110,10 +130,11 @@ export class AsmViewerController {
       if (fa !== -1) {
         this.asm.splice(fa, 0, {
           mnemonic:
-            (func.name ||
-              `FUN_${func.start_address.toString(16).padStart(8, "0")}`) + ":",
+            func.name ||
+            `FUN_${func.start_address.toString(16).padStart(8, "0")}`,
           type: "label",
           references: func.references,
+          address: func.start_address,
         });
       }
     });
@@ -121,7 +142,7 @@ export class AsmViewerController {
 
   /**
    * @param {MouseEvent} event
-   * @param {string[]} references
+   * @param {{address: string; func?: string}[]} references
    */
   onReferencesClick(event, references) {
     event.preventDefault();
@@ -129,13 +150,15 @@ export class AsmViewerController {
     this.menuService.showMenu(
       event,
       references.map((r) => ({
-        label: `Go to $${r}`,
-        click: () => this.showAsm("0x" + r),
+        label: r.func
+          ? `Go to ${r.func} ($${r.address})`
+          : `Go to $${r.address}`,
+        click: () => this.showAsm("0x" + r.address),
       }))
     );
   }
 
-  refresh() {
+  async refresh() {
     if (!this.regs?.pc) {
       return;
     }
@@ -144,7 +167,7 @@ export class AsmViewerController {
 
     const disasmWindow = this.disasmWindow;
 
-    const instr = this.asm.find((a) => a.address === this.regs.pc);
+    const instr = this.asm.find((a) => a.address === this.regs.pc && !a.type);
     if (!instr) {
       console.log("instruction not found for ", this.regs.pc);
       /** @type {WebSocket} */
@@ -429,9 +452,27 @@ export class AsmViewerController {
           const newName = prompt(`Rename ${label} to:`, label);
           if (newName) {
             WsService.send(`fn name 0x${pa.op_1} ${newName}`);
-            this.funcs.find((func) => func.start_address === parseInt(pa.op_1, 16)).name = newName;
-            // this.funcs.find((func) => func.name === label).name = newName;
+            this.funcs.find(
+              (func) => func.start_address === parseInt(pa.op_1, 16)
+            ).name = newName;
             pa.op_str = newName;
+          }
+        },
+      },
+    ]);
+  }
+
+  onFnLabelClick(event, pa) {
+    this.menuService.showMenu(event, [
+      {
+        label: `Rename ${pa.mnemonic}`,
+        click: () => {
+          const newName = prompt(`Rename ${pa.mnemonic} to:`, pa.mnemonic);
+          if (newName) {
+            WsService.send(`fn name 0x${pa.address.toString(16)} ${newName}`);
+            this.funcs.find((func) => func.start_address === pa.address).name =
+              newName;
+            pa.mnemonic = newName;
           }
         },
       },
@@ -441,24 +482,37 @@ export class AsmViewerController {
   /**
    * @param {string} address
    */
-  async showAsm(address) {
+  async showAsm(address, saveHistory = true) {
     if (address.indexOf("0x") === -1) {
       address = "0x" + address;
     }
 
-    this.scrollHistory.push(this.disasmWindow.scrollTop);
+    if (saveHistory) {
+      const currentInstructionAddress =
+        this.asm[
+          Math.round(this.disasmWindow.scrollTop / 24) -
+            this.firstInstructionIndex +
+            3
+        ].address;
+      this.scrollHistory.push(currentInstructionAddress.toString(16));
+    }
 
-    const data = await WsService.getAsm(address);
+    const data = await WsService.getAsm({ address });
 
-    const instrIndex = data.data.findIndex(instr => instr.address === parseInt(address, 16));
+    const instrIndex = data.data.findIndex(
+      (instr) => instr.address === parseInt(address, 16)
+    );
 
     // Adding 100 because we get 100 extra instructions on each side around address
-    this.disasmWindow.scrollTo(0, (data.index + instrIndex - 3) * 24);
+    this.disasmWindow.scrollTo(
+      0,
+      (this.firstInstructionIndex + instrIndex - 3) * 24
+    );
   }
 
   goBack() {
     if (this.scrollHistory.length) {
-      this.disasmWindow.scrollTo(0, this.scrollHistory.pop());
+      this.showAsm(this.scrollHistory.pop(), false);
     }
   }
 }
@@ -479,7 +533,9 @@ export const AsmViewerComponent = {
         </div>
         <div class="code-listing" style="height: {{ $ctrl.totalInstructionCount * 24 }}px">
             <div class="code-row" ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px">
-                <span ng-if-start="pa.type === 'label'">{{pa.mnemonic}}</span>
+                <span ng-if-start="pa.type === 'label'"
+                  ng-click="$ctrl.onFnLabelClick($event, pa)"
+                >{{pa.mnemonic}}:</span>
                 <button ng-if-end
                   ng-if="pa.references.length" 
                   class="btn btn-link p-0"

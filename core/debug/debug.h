@@ -6,14 +6,16 @@
 #include <setjmp.h>
 
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value);
+void visualize_ym2612(unsigned int address, unsigned int value);
 jmp_buf jmp_env;
 int dbg_trace;
 int dbg_in_interrupt;
 // Can be toggled on and off from client
 int break_in_interrupt;
 
-typedef enum {
-	DBG_STEP = 0,
+typedef enum
+{
+    DBG_STEP = 0,
     DBG_YM2612 = 1
 } dbg_event_t;
 

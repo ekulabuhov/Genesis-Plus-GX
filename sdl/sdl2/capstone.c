@@ -74,7 +74,7 @@ void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **mess
 
     *message = malloc(strlen(result.aResult[1]) + 100);
     
-    sprintf(*message, "{ \"type\": \"asm\", \"index\": %u, \"count\": %s, \"data\": %s }", index > 100 ? index - 100 : 1, count.aResult[1], result.aResult[1]);
+    sprintf(*message, "{ \"type\": \"asm\", \"index\": %u, \"count\": %s, \"data\": %s }", index >= 100 ? index - 100 : 0, count.aResult[1], result.aResult[1]);
 
     sqlite3_free_table(result.aResult);
     sqlite3_free_table(count.aResult);
@@ -117,14 +117,21 @@ fam *get_functions(void)
 
 char *funcs(void)
 {
-    struct SqlResult result = run_sql("select json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs))) from \
-    (select f.*, NULLIF(json_group_array(printf('%%X', i.address)), '[\"0\"]') as refs, l.name\
-    from functions f\
-    left join instructions i on \
-        i.op_1 = printf('%%X', f.start_address)\
-        and mnemonic = 'jsr'\
-    LEFT JOIN labels l on i.op_1 = l.address\
-    group by f.start_address\
+    struct SqlResult result = run_sql("SELECT json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs))) from \
+    (SELECT \
+        f.*, \
+        NULLIF(json_group_array (json_object('address', printf ('%%X', i.address), 'func', ref_label.name, 'func_address', ref_f.start_address)), '[{\"address\":\"0\",\"func\":null,\"func_address\":null}]') AS refs, \
+        l.name \
+    from functions f \
+    LEFT JOIN jump_tables jt ON jt.function_start_address = f.start_address \
+    LEFT JOIN instructions i ON jt.instruction_address = i.address \
+    LEFT JOIN labels l ON i.op_1 = l.address \
+    "// Find a function that surrounds referenced instruction
+    "LEFT JOIN functions ref_f ON i.address BETWEEN ref_f.start_address \
+		AND ref_f.end_address \
+    "// Get a label for referenced function
+    "LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \
+    GROUP BY f.start_address \
     ORDER BY f.start_address) t");
     return result.aResult[1];
 }
