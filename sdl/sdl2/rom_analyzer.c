@@ -3,7 +3,9 @@
 #include <capstone/capstone.h>
 #include <string.h>
 #include <sqlite3.h>
-#include "capstone.h"
+#include <math.h>
+
+#include "storage.h"
 #include "rom_analyzer.h"
 
 #define LENGTH 0x100
@@ -13,6 +15,7 @@ struct Tuple
     int bra_destination;
     int last_address;
     int return_address;
+    fam branches;
 };
 
 struct FromTo
@@ -57,23 +60,14 @@ void add_function(struct Function *f, int from, int to)
     x->to = to;
 }
 
-struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct Function *f)
+struct Tuple find_rts(int address, size_t length, const unsigned char *code, csh handle, struct Function *f, struct Tuple r)
 {
     cs_insn *insn;
-    int count = cs_disasm(handle, code, LENGTH, address, 0, &insn);
+    int count = cs_disasm(handle, code, length, address, 0, &insn);
     printf("count: %d, code: %d\n", count, sizeof(code));
 
-    struct Tuple r = {.return_address = 0};
     cs_insn last_instruction = insn[count - 1];
     r.last_address = last_instruction.address + last_instruction.size;
-
-    f->instruction_count += (count - 1);
-    int new_size = sizeof(f->instructions[0]) * (f->instruction_count);
-    f->instructions = realloc(f->instructions, new_size);
-    for (size_t i = 0; i < (count - 1); i++)
-    {
-        f->instructions[f->instruction_count - (count - 1) + i] = &insn[i];
-    }
 
     bool fully_decoded = (r.last_address + 4) >= address + LENGTH;
     if (fully_decoded)
@@ -84,7 +78,11 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
 
     for (int i = 0; i < count; i++)
     {
-        char *bytesAsString = malloc(20);
+        f->instruction_count++;
+        int new_size = sizeof(f->instructions[0]) * (f->instruction_count);
+        f->instructions = realloc(f->instructions, new_size);
+        f->instructions[f->instruction_count - 1] = &insn[i];
+        //        char *bytesAsString = malloc(20);
         //        int charsWritten = 0;
         //        for (size_t j = 0; j < insn[i].size; j++)
         //        {
@@ -92,7 +90,7 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
         //        }
         //        bytesAsString[charsWritten - 1] = 0;
 
-        printf("%02X: %s\t%s, %s\n", insn[i].address, bytesAsString, insn[i].mnemonic, insn[i].op_str);
+        printf("%02X: %s\t, %s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str);
 
         if (strstr(insn[i].mnemonic, "dbra") == insn[i].mnemonic)
         {
@@ -105,9 +103,17 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
             int jump_to = insn[i].address + insn[i].detail->m68k.operands[0].br_disp.disp + 2;
             printf("bra detected at %02X, jumps to %02X\n", insn[i].address, jump_to);
 
-            if (jump_to > r.last_address && (jump_to < r.bra_destination || r.bra_destination == 0))
+            if (insn[i].address == jump_to)
             {
-                r.bra_destination = jump_to;
+                printf("infinite loop detected, treating as end of the function\n");
+                r.return_address = jump_to;
+                return r;
+            }
+
+            if (jump_to >= insn[i].address)
+            {
+                r.last_address = jump_to;
+                return r;
             }
         }
 
@@ -124,6 +130,16 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
             printf("rts detected at %02X\n", insn[i].address);
             r.return_address = insn[i].address;
 
+            // This is the last instruction in this function
+            return r;
+        }
+
+        if (strstr(insn[i].mnemonic, "rte") == insn[i].mnemonic)
+        {
+            printf("rte detected at %02X\n", insn[i].address);
+            r.return_address = insn[i].address;
+
+            // This is the last instruction in this function
             return r;
         }
 
@@ -157,6 +173,15 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
                     r.last_address = insn[i].address + insn[i].size + jump_table_size * 2;
                     printf("jmp detected at %02X with jump table from %02X to %02X\n", insn[i].address,
                            insn[i].address + insn[i].size, insn[i].address + insn[i].size + jump_table_size * 2);
+
+                    for (size_t j = 0; j < jump_table_size; j++)
+                    {
+                        int entry_address = insn[i].address + insn[i].size - address + j * 2;
+                        int offset = (code[entry_address] << 8) + code[entry_address+1];
+                        int jump_to = insn[i].address + insn[i].size + offset;
+                        fam_append(&r.branches, jump_to);
+                    }
+
                     // Return to continue at bra_destination
                     return r;
                 }
@@ -216,12 +241,18 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
         }
 
         // Bcc
-        if (insn[i].bytes[0] >> 4 == 6)
+        if (insn[i].bytes[0] >= 0x62 && insn[i].bytes[0] <= 0x6F)
         {
             int jump_to = insn[i].address + insn[i].detail->m68k.operands[0].br_disp.disp + 2;
             printf("%s detected at %02X, jumps to %02X\n", insn[i].mnemonic, insn[i].address, jump_to);
 
-            r.bra_destination = jump_to;
+            // We are only interested in jumps forward
+            if (jump_to > insn[i].address)
+            {
+                r.bra_destination = jump_to;
+            }
+
+            fam_append(&r.branches, jump_to);
         }
     }
 
@@ -232,10 +263,6 @@ struct Tuple find_rts(int address, const unsigned char *code, csh handle, struct
     {
         // We'll restart from last instruction as it might be only partially decoded
         r.last_address = insn[count].address;
-    }
-    else
-    {
-        r.last_address = r.bra_destination;
     }
 
     return r;
@@ -279,6 +306,24 @@ unsigned char *read_from_file(unsigned int length, unsigned int address)
 
 csh handle;
 
+void print_function(struct Function f)
+{
+    for (size_t i = 0; i < f.instruction_count; i++)
+    {
+        printf("%02X: %s\t %s\n", f.instructions[i]->address, f.instructions[i]->mnemonic, f.instructions[i]->op_str);
+    }
+
+    printf("%02X - %02X\n", f.start_address, f.end_address);
+}
+
+int cmpfunc(const void *a, const void *b)
+{
+    cs_insn *aa = *(cs_insn **)a;
+    cs_insn *bb = *(cs_insn **)b;
+
+    return aa->address - bb->address;
+}
+
 struct Function extract_function(int referenced_from, int address, rom_reader read_rom)
 {
     struct Function f = {.start_address = address, .referenced_from = referenced_from, .function_count = 0, .function_size = 0, .functions = NULL};
@@ -292,24 +337,70 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
             return f;
     }
 
-    struct Tuple r;
+    struct Tuple r = {.return_address = 0};
     do
     {
         const unsigned char *code = read_rom(LENGTH, address);
 
-        r = find_rts(address, code, handle, &f);
+        r = find_rts(address, LENGTH, code, handle, &f, r);
         printf("found la %02X, bd %02X\n", r.last_address, r.bra_destination);
         address = r.last_address;
     } while (r.return_address == 0);
 
     f.end_address = r.return_address;
 
-    for (size_t i = f.instruction_count - 1; i > 0; i--)
+    // Visit all local branches
+    for (size_t i = 0; i < r.branches.len; i++)
     {
-        if (f.instructions[i]->address == f.end_address)
+        int local_branch = r.branches.arr[i];
+        int local_branch_visited = 0;
+        for (size_t j = 0; j < f.instruction_count; j++)
         {
-            f.instruction_count = i + 1;
-            break;
+            if (f.instructions[j]->address > local_branch)
+            {
+                break;
+            }
+
+            if (f.instructions[j]->address == local_branch)
+            {
+                local_branch_visited = 1;
+                break;
+            }
+        }
+
+        if (local_branch_visited == 0)
+        {
+            int next_instruction_address = 0;
+            if (local_branch < f.instructions[f.instruction_count - 1]->address)
+            {
+                for (size_t j = 0; j < f.instruction_count; j++)
+                {
+                    if (f.instructions[j]->address > local_branch)
+                    {
+                        next_instruction_address = f.instructions[j]->address;
+                        break;
+                    }
+                }
+            }
+
+            r.return_address = 0;
+
+            int waiting_for_rts = 0;
+            address = local_branch;
+            do
+            {
+                int length = next_instruction_address ? fmin(LENGTH, next_instruction_address - address) : LENGTH;
+                const unsigned char *code = read_rom(length, address);
+                r = find_rts(address, length, code, handle, &f, r);
+                address = r.last_address;
+            } while (next_instruction_address - r.last_address > 0 && r.return_address == 0);
+
+            if (r.return_address > f.end_address) {
+                f.end_address = r.return_address;
+            }
+
+            qsort(f.instructions, f.instruction_count, sizeof(cs_insn **), cmpfunc);
+            print_function(f);
         }
     }
 
@@ -361,13 +452,15 @@ void store_in_db(struct Function f)
                 insn.address, insn.mnemonic, insn.op_str, insn.size, op_1);
     }
 
-    run_sql("INSERT INTO jump_tables (instruction_address, function_start_address)"\
-        "VALUES ('%d', '%d')", f.referenced_from, f.start_address);
+    run_sql("INSERT INTO jump_tables (instruction_address, function_start_address)"
+            "VALUES ('%d', '%d')",
+            f.referenced_from, f.start_address);
 
     for (size_t i = 0; i < f.function_count; i++)
     {
-        run_sql("INSERT INTO jump_tables (instruction_address, function_start_address)"\
-        "VALUES ('%d', '%d')", f.functions[i].from, f.functions[i].to);
+        run_sql("INSERT INTO jump_tables (instruction_address, function_start_address)"
+                "VALUES ('%d', '%d')",
+                f.functions[i].from, f.functions[i].to);
     }
 }
 
@@ -451,16 +544,19 @@ void populate_data(FILE *pFile, int address, int length, int size)
 
     char sizeCode = 'b';
 
-    if (size == 2) {
+    if (size == 2)
+    {
         sizeCode = 'w';
-    } else if (size == 4) {
+    }
+    else if (size == 4)
+    {
         sizeCode = 'l';
     }
 
-    for (int i = 0; i < length; i+=size)
+    for (int i = 0; i < length; i += size)
     {
         run_sql("INSERT INTO  \"instructions\" (\"address\", \"mnemonic\", \"op_str\") VALUES ('%d', 'dc.%c', '%02X');",
-                i, sizeCode, endian_swap(*((uint32_t *)code + (i/size))));
+                i, sizeCode, endian_swap(*((uint32_t *)code + (i / size))));
     }
 }
 
@@ -473,14 +569,14 @@ static uint32_t read_rom_uint(FILE *pFile, uint32_t address)
 
     uint32_t value = 0;
     int result = fread(&value, sizeof(value), 1, pFile);
-    printf("read %d bytes\n", result);
+    printf("read %d bytes from %d\n", result, address);
 
     return endian_swap(value);
 }
 
-rom_reader init_file_reader()
+rom_reader init_file_reader(char *filename)
 {
-    pFile = fopen("Dune - The Battle for Arrakis (U) [!].gen", "rb");
+    pFile = fopen(filename, "rb");
     if (pFile == NULL)
     {
         fputs("File error", stderr);
@@ -493,23 +589,30 @@ rom_reader init_file_reader()
     return read_from_file;
 }
 
+struct SqlResult must_run_sql(const char *sql) {
+    struct SqlResult result = run_sql(sql);
+    if (result.zErrMsg) {
+        printf("SQL error: %s\n", result.zErrMsg);
+        exit(1);
+    }
+}
+
 #ifdef OWN_APP
-sqlite3 *db;
 int main(int argc, char **argv)
 {
-    int rc = sqlite3_open("Dune - The Battle for Arrakis (U) [!].sqlite3", &db);
-    if (rc != SQLITE_OK)
-    {
-        printf("failed to open the db\n");
+    if (argc < 2) {
+        fputs("Please provide a filename\n", stderr);
         exit(1);
     }
 
-    printf("db connected\n");
-    run_sql("DELETE FROM \"instructions\";");
-    run_sql("DELETE FROM \"functions\";");
-    run_sql("DELETE FROM \"jump_tables\";");
+    init_db(argv[1]);
 
-    init_file_reader();
+    printf("db connected\n");
+    must_run_sql("DELETE FROM \"instructions\";");
+    must_run_sql("DELETE FROM \"functions\";");
+    must_run_sql("DELETE FROM \"jump_tables\";");
+
+    init_file_reader(argv[1]);
 
     // First 256 bytes contain different vectors
     populate_data(pFile, 0, 0x100, 4);
@@ -525,7 +628,6 @@ int main(int argc, char **argv)
     add_visited_branch(start2);
     extract_functions(0x78, irq_l6, read_from_file);
 
-    sqlite3_close(db);
     return 0;
 }
 #endif

@@ -131,7 +131,7 @@ OBJECTS	+=	$(OBJDIR)/main.o	\
 		$(OBJDIR)/unzip.o       \
 		$(OBJDIR)/fileio.o	\
 		$(OBJDIR)/server.o	\
-		$(OBJDIR)/capstone.o	\
+		$(OBJDIR)/storage.o	\
 		$(OBJDIR)/cpuhook.o	\
 		$(OBJDIR)/debug.o \
 		$(OBJDIR)/rom_analyzer.o

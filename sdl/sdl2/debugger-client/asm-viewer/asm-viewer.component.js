@@ -11,6 +11,7 @@ export class AsmViewerController {
    * @prop {string} op_str - label of the first operand (e.g. 'FUN_copyDataToRam')
    * @prop {string} explain - is used to add context to executed instruction, e.g. explain type of VDP operation
    * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
+   * @prop {string} comment
    */
 
   /** @type {instruction[]} */
@@ -462,6 +463,10 @@ export class AsmViewerController {
     ]);
   }
 
+  /**
+   * @param {MouseEvent} event
+   * @param {instruction} pa
+   */
   onFnLabelClick(event, pa) {
     this.menuService.showMenu(event, [
       {
@@ -515,6 +520,18 @@ export class AsmViewerController {
       this.showAsm(this.scrollHistory.pop(), false);
     }
   }
+
+  /**
+   * @param {instruction} pa
+   */
+  onCodeRowClick(pa) {
+    const comment = prompt(`Add comment to 0x${pa.address.toString(16)}:`, pa.comment || '');
+    // null is returned when Cancel is clicked
+    if (comment !== null) {
+      WsService.send(`add comment ${pa.address} ${comment}`);
+      pa.comment = comment;
+    }
+  }
 }
 
 export const AsmViewerComponent = {
@@ -532,7 +549,11 @@ export const AsmViewerComponent = {
             ></div>
         </div>
         <div class="code-listing" style="height: {{ $ctrl.totalInstructionCount * 24 }}px">
-            <div class="code-row" ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px">
+            <div 
+              class="code-row" 
+              ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px"
+              ng-click="$ctrl.onCodeRowClick(pa)"
+            >
                 <span ng-if-start="pa.type === 'label'"
                   ng-click="$ctrl.onFnLabelClick($event, pa)"
                 >{{pa.mnemonic}}:</span>
@@ -561,6 +582,9 @@ export const AsmViewerComponent = {
                 </button>
                 <span ng-if-end ng-mouseover="$ctrl.displayExplainTooltip($event, pa.valTooltip)">
                     {{pa.explain}}
+                </span>
+                <span ng-if="pa.comment" class="comment">
+                    ; {{pa.comment}}
                 </span>
             </div>
         </div>

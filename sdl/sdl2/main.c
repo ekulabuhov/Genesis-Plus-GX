@@ -12,6 +12,8 @@
 #include "debug.h"
 jmp_buf jmp_env;
 
+#include "storage.h"
+
 static Uint32 sdl_sync_timer_callback(Uint32 interval, void *param);
 
 #define SOUND_FREQUENCY 44100
@@ -827,6 +829,8 @@ int main (int argc, char **argv)
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", caption, sdl_video.window);
     return 1;
   }
+
+  init_db(argv[1]);
 
   /* initialize system hardware */
   audio_init(SOUND_FREQUENCY, 0);

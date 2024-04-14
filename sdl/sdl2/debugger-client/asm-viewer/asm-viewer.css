@@ -32,6 +32,7 @@
 
 .code-row {
   position: absolute;
+  width: -webkit-fill-available;
 }
 
 .asm-tooltip {
@@ -59,4 +60,8 @@
 
 .code-overlay {
   z-index: -1;
+}
+
+.comment {
+  color: #6a9955;
 }

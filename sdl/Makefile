@@ -24,8 +24,9 @@ LIBS += -lsqlite3
 OBJDIR = ./build_rom_analyzer
 
 OBJECTS	=       $(OBJDIR)/rom_analyzer.o \
-	$(OBJDIR)/capstone.o \
+	$(OBJDIR)/storage.o \
 	$(OBJDIR)/rom_analyzer_tests.o \
+	$(OBJDIR)/storage_tests.o \
 	$(OBJDIR)/munit.o
 
 all: $(NAME)

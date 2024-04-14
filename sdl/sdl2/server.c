@@ -223,6 +223,18 @@ void onmessage(ws_cli_conn_t *client,
 		create_label(address, name);
 	}
 
+	// Format: "add comment <address> comment"
+	if (strstr((const char *)msg, "add comment ") == (const char *)msg)
+	{
+		strtok((char *)msg, " ");
+		strtok(NULL, " "); // Skip "comment"
+
+		uint32_t address = read_number_token();
+		char *comment = strtok(NULL, "");
+
+		add_comment(address, comment);
+	}
+
 	if (message != NULL)
 	{
 		ws_sendframe_txt(client, message);
