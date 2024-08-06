@@ -20,46 +20,35 @@ export const BreakpointsComponent = {
   },
   templateUrl: "breakpoints/breakpoints.component.html",
   controller: class BreakpointsController {
-    /** @type {Breakpoint[]} */
-    _breakpoints;
     /** @type {import("../menu/menu.service.js").MenuService} */
     menuService;
+    /** @type {import("./breakpoints.service.js").BreakpointsService} */
+    bps;
     /** @type {(data: { address: string; type: string; }) => void} */
     onViewMemory;
 
-    constructor(menuService) {
+    /**
+     * 
+     * @param {*} menuService 
+     * @param {import("./breakpoints.service.js").BreakpointsService} breakpointsService 
+     */
+    constructor(menuService, breakpointsService) {
       this.menuService = menuService;
-    }
-
-    /** @type {Breakpoint[]} */
-    get breakpoints() {
-      if (!this._breakpoints) {
-        this._breakpoints = JSON.parse(localStorage.getItem("breakpoints")) || [
-          defaultBreakpoint,
-        ];
-      }
-      return this._breakpoints;
-    }
-
-    set breakpoints(value) {
-      if (value.length === 0) {
-        value.push(defaultBreakpoint);
-      }
-      this._breakpoints = value;
-      localStorage.setItem("breakpoints", JSON.stringify(value));
+      this.bps = breakpointsService;
     }
 
     /**
      * @param {number} index
      */
     onBptDelete(index) {
-      const copy = Array.from(this.breakpoints);
+      const copy = Array.from(this.bps.breakpoints);
       copy.splice(index, 1);
-      this.breakpoints = copy;
+      this.bps.breakpoints = copy;
+      WsService.syncBreakpoints();
     }
 
     onBptAdd() {
-      this.breakpoints = this.breakpoints.concat([defaultBreakpoint]);
+      this.bps.breakpoints = this.bps.breakpoints.concat([{...defaultBreakpoint}]);
     }
 
     /**
@@ -75,13 +64,12 @@ export const BreakpointsComponent = {
           "0x" + bpt.address.toLowerCase().split("x")[1].toUpperCase();
       }
 
-      this.breakpoints = Object.assign([], this.breakpoints, { [index]: bpt });
-
+      this.bps.breakpoints = Object.assign([], this.bps.breakpoints, { [index]: bpt });
       WsService.syncBreakpoints();
     }
 
-    onEnableChange(index) {
-      this.breakpoints = this.breakpoints.concat();
+    onEnableChange() {
+      this.bps.breakpoints = this.bps.breakpoints.concat();
       WsService.syncBreakpoints();
     }
 

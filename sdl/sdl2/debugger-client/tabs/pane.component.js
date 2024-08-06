@@ -11,5 +11,7 @@ export const PaneComponent = {
       this.tabsCtrl.addPane(this);
     };
   },
-  template: `<div class="h-100 tab-pane" ng-show="$ctrl.selected" ng-transclude></div>`,
+  // title is a valid HTML attribute that shows a tooltip
+  // Setting it to empty here to hide the tooltip
+  template: `<div class="h-100 tab-pane" ng-show="$ctrl.selected" ng-transclude title></div>`,
 };

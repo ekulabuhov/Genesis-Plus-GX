@@ -13,7 +13,7 @@ char *funcs(void);
 
 typedef struct { 
     int len; 
-    int *arr; 
+    int* arr; 
 } fam;
 fam *fam_new(size_t size);
 void fam_append(fam *fam1, int value);

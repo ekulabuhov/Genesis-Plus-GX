@@ -94,6 +94,12 @@ export class WsService {
    * @param {string|number} address
    * @param {number} size
    * @param {'rom' | 'vram' | 'cram'} [type]
+   * 
+   * @typedef {Object} showMemoryLocationResponse
+   * @prop {number[][]} data - two dimensional array 16 bytes wide
+   * @prop {number} address
+   * 
+   * @returns {Promise<showMemoryLocationResponse>}
    */
   static showMemoryLocation(address, size, type = 'rom') {
     if (typeof address !== "string") {

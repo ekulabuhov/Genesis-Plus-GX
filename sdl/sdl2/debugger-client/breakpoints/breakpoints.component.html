@@ -19,7 +19,7 @@
       </tr>
     </thead>
     <tbody>
-      <tr ng-repeat="bpt in $ctrl.breakpoints track by $index">
+      <tr ng-repeat="bpt in $ctrl.bps.breakpoints track by $index">
         <!-- Edit mode -->
         <td ng-if-start="bpt.edit">
           <input
@@ -113,6 +113,7 @@
             style="margin-left: auto"
             ng-click="$ctrl.onBptSubmit(bpt, $index)"
             ng-if="bpt.edit"
+            ng-disabled="!bpt.address"
           >
             <i class="bi bi-check-lg"></i>
           </button>

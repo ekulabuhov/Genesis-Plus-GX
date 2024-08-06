@@ -1,0 +1,13 @@
+function-list {
+    --vscode-list-activeSelectionForeground: #ffffff;
+    --vscode-list-activeSelectionBackground: #04395e;
+}
+
+function-list tr:focus td {
+    color: var(--vscode-list-activeSelectionForeground);
+    background-color: var(--vscode-list-activeSelectionBackground);
+}
+
+function-list tr:not(.filters) {
+    cursor: pointer;
+}

@@ -12,6 +12,7 @@ export class AsmViewerController {
    * @prop {string} explain - is used to add context to executed instruction, e.g. explain type of VDP operation
    * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
    * @prop {string} comment
+   * @prop {'label' | 'empty'} [type] - modifies how data is rendered, e.g. labels omit addresses at the beginning
    */
 
   /** @type {instruction[]} */
@@ -26,7 +27,7 @@ export class AsmViewerController {
   totalInstructionCount = 0;
   /**
    * Used to display function names in the listing
-   * @type {{start_address: number, end_address: number, name: string, references: string[]}[]} */
+   * @type {import("../index").func[]} */
   funcs = [];
   /** @type {import("../menu/menu.service.js").MenuService} */
   menuService;
@@ -38,14 +39,17 @@ export class AsmViewerController {
   scrollHistory = [];
   // Is set only when asm is requested by PC change
   waitingForAsm = false;
+  /** @type {import("../breakpoints/breakpoints.service.js").BreakpointsService} */
+  bps;
 
   /**
-   *
-   * @param {*} menuService
-   * @param {import("angular").IScope} $scope
+   * @param {import("../menu/menu.service.js").MenuService} menuService
+   * @param {import("../breakpoints/breakpoints.service.js").BreakpointsService} breakpointsService
    */
-  constructor(menuService, $scope) {
+  constructor(menuService, breakpointsService) {
     this.menuService = menuService;
+    this.bps = breakpointsService;
+    this.bps.onChange(() => this.updateBreakpointMarkers());
     WsService.asmViewer = this;
 
     WsService.on("open", async () => {
@@ -54,11 +58,11 @@ export class AsmViewerController {
 
     WsService.on("message", (data) => {
       if (data.type === "asm") {
-        const labelCount =
-          this.funcs.findLastIndex(
-            (func) => func.start_address < data.data[0].address
-          ) + 1;
-        this.firstInstructionIndex = data.index + labelCount;
+        // const labelCount =
+        //   this.funcs.findLastIndex(
+        //     (func) => func.start_address < data.data[0].address
+        //   ) + 1;
+        this.firstInstructionIndex = data.index;// + labelCount;
       }
     });
 
@@ -94,6 +98,23 @@ export class AsmViewerController {
     };
   }
 
+  /**
+   * Converts breakpoints to top offsets that are rendered on the gutter
+   */
+  updateBreakpointMarkers() {
+    /** @type {number[]} */
+    this.breakpointMarkers = this.bps.breakpoints.reduce((acc, bp) => {
+      const instrIndex = this.asm.findIndex(
+        (a) =>
+          bp.type === "rom" && bp.address && a.address == parseInt(bp.address)
+      );
+      if (instrIndex !== -1) {
+        acc.push((instrIndex + this.firstInstructionIndex) * 24);
+      }
+      return acc;
+    }, /** @type {number[]} */ ([]));
+  }
+
   /** @type {WebSocket} */
   get ws() {
     return window["ws"];
@@ -107,6 +128,18 @@ export class AsmViewerController {
   $onChanges(changesObj) {
     if (changesObj["asm"]?.currentValue) {
       this.insertFunctionLabels();
+
+      // Support for multi-line comments
+      this.asm
+        .filter((insn) => insn.comment?.includes("\n"))
+        .forEach((insn) => {
+          const i = this.asm.indexOf(insn);
+          const extra_lines = insn.comment.split("\n").length - 1;
+          const extra_insns = Array.from({ length: extra_lines }).map((_) => ({
+            type: "empty",
+          }));
+          this.asm.splice(i + 1, 0, ...extra_insns);
+        });
 
       if (this.stopScrollEvents) {
         this.stopScrollEvents = false;
@@ -181,6 +214,8 @@ export class AsmViewerController {
     const instrIndex = this.asm.indexOf(instr);
     this.debugLineTop = (instrIndex + this.firstInstructionIndex) * 24 + 2;
 
+    this.updateBreakpointMarkers();
+
     // Below logic is called when you step through code
     const marginInLines = 3;
     // If we're outside of current listing - jump to current instruction
@@ -231,7 +266,9 @@ export class AsmViewerController {
       let fromValue, toValue;
       if (/^[a,d][0-7]$/.test(operands[0])) {
         fromValue = this.regs[operands[0]];
-      }
+      } else if (/^#\$[0-9,a-f]{4}$/.test(operands[0])) { // E.g. plain number: #$8f02
+        fromValue = parseInt(operands[0].replace('#$', '0x'));
+      } 
 
       if (operands[1].indexOf("(") !== -1) {
         operands[1] = operands[1].replace(/[(,)]/g, "");
@@ -485,7 +522,7 @@ export class AsmViewerController {
   }
 
   /**
-   * @param {string} address
+   * @param {string} address - treated as hex, "200" and "0x200" are equal
    */
   async showAsm(address, saveHistory = true) {
     if (address.indexOf("0x") === -1) {
@@ -498,8 +535,11 @@ export class AsmViewerController {
           Math.round(this.disasmWindow.scrollTop / 24) -
             this.firstInstructionIndex +
             3
-        ].address;
-      this.scrollHistory.push(currentInstructionAddress.toString(16));
+        ]?.address;
+      
+      if (currentInstructionAddress) {
+        this.scrollHistory.push(currentInstructionAddress.toString(16));
+      }
     }
 
     const data = await WsService.getAsm({ address });
@@ -525,12 +565,45 @@ export class AsmViewerController {
    * @param {instruction} pa
    */
   onCodeRowClick(pa) {
-    const comment = prompt(`Add comment to 0x${pa.address.toString(16)}:`, pa.comment || '');
+    const comment = prompt(
+      `Add comment to 0x${pa.address.toString(16)}:`,
+      pa.comment || ""
+    );
     // null is returned when Cancel is clicked
     if (comment !== null) {
       WsService.send(`add comment ${pa.address} ${comment}`);
       pa.comment = comment;
     }
+  }
+
+  /**
+   * Called when clicking on the gutter besides the line number
+   * @param {PointerEvent} event
+   * @param {instruction} pa
+   */
+  onBreakpointToggle(event, pa) {
+    // Stop it from calling the "add comment" handler above
+    event.stopPropagation();
+    const hexAddress = "0x" + pa.address.toString(16);
+
+    // If it exists - remove it
+    if (this.bps.breakpoints.some((bp) => bp.address === hexAddress)) {
+      this.bps.breakpoints = this.bps.breakpoints.filter(
+        (bp) => bp.address !== hexAddress
+      );
+    } else {
+      // If it doesn't exist - add it
+      this.bps.breakpoints = this.bps.breakpoints.concat([
+        {
+          address: hexAddress,
+          type: "rom",
+          execute: true,
+          enabled: true,
+        },
+      ]);
+    }
+
+    WsService.syncBreakpoints();
   }
 }
 
@@ -541,6 +614,11 @@ export const AsmViewerComponent = {
             <div
               class="debug-line"
               style="top: {{ $ctrl.debugLineTop }}px"
+            ></div>
+            <div
+              ng-repeat="bpt in $ctrl.breakpointMarkers track by $index"
+              class="breakpoint-glyph"
+              style="top: {{ bpt }}px"
             ></div>
             <div
               ng-if="$ctrl.branchLineTop"
@@ -565,7 +643,12 @@ export const AsmViewerComponent = {
                   {{pa.references.length}} reference{{pa.references.length > 1 ? 's' : ''}}
                 </button>
 
-                <span ng-if-start="pa.type !== 'label'" class="addr">
+                <span ng-if="pa.type === 'empty'"></span>
+
+                <span ng-if-start="pa.type !== 'label' && pa.type !== 'empty'" 
+                  class="addr"
+                  ng-click="$ctrl.onBreakpointToggle($event, pa)"
+                >
                     0x{{pa.address.toString(16)}}:
                 </span>
                 <span ng-if="$ctrl.showBytes" class="bytes">
@@ -583,9 +666,7 @@ export const AsmViewerComponent = {
                 <span ng-if-end ng-mouseover="$ctrl.displayExplainTooltip($event, pa.valTooltip)">
                     {{pa.explain}}
                 </span>
-                <span ng-if="pa.comment" class="comment">
-                    ; {{pa.comment}}
-                </span>
+                <span ng-if="pa.comment" class="comment">; {{pa.comment.replaceAll('\n', '\n; ')}} {{ pa.extra_lines }}</span>
             </div>
         </div>
     </div>`,

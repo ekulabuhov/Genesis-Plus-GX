@@ -1,5 +1,8 @@
 .addr {
   color: #569cd6;
+  /* Adds extra space for breakpoint glyph hover */
+  margin-left: -16px;
+  padding-left: 16px;
 }
 
 .bytes {
@@ -47,7 +50,7 @@
 .code-listing {
   position: relative;
   /* Leave some space for branch line */
-  padding-left: 10px;
+  padding-left: 16px;
 }
 
 .branch-line {
@@ -64,4 +67,31 @@
 
 .comment {
   color: #6a9955;
+  display: inline-flex;
+  white-space: pre;
+}
+
+.breakpoint-glyph {
+  width: 10px;
+  height: 10px;
+  border-radius:50%;
+  background-color: red;
+  margin-top: 7px;
+  margin-left: 2px;
+  position: absolute;
+  cursor: pointer;
+}
+
+/* breakpoint-glyph ghost icon when hovering gutter */
+span.addr:hover::before {
+  content: '';
+  width: 10px;
+  display: inline-block;
+  background-color: rgba(255, 0, 0, 0.5);
+  height: 10px;
+  border-radius: 50%;
+  position: absolute;
+  left: -14px;
+  top: 7px;
+  cursor: pointer;
 }

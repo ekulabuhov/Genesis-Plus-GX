@@ -25,3 +25,4 @@ sdl/sdl2/debugger-client/node_modules/
 .vscode/
 *.sqlite3
 sdl/rom_analyzer
+sdl/rom_analyzer_tests

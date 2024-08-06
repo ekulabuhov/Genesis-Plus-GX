@@ -12,13 +12,16 @@
     <script src="bootstrap.bundle.min.js"></script>
     <link href="memory-viewer/memory-viewer.css" rel="stylesheet" />
     <link href="asm-viewer/asm-viewer.css" rel="stylesheet" />
-    <link href="sprite-viewer/sprite-viewer.css" rel="stylesheet" />
+    <link href="tile-viewer/tile-viewer.css" rel="stylesheet" />
     <link href="register-viewer/register-viewer.css" rel="stylesheet" />
     <link href="ym2612/ym2612.css" rel="stylesheet" />
+    <link href="function-list/function-list.css" rel="stylesheet" />
     <script type="module" src="index.js"></script>
   </head>
+  <!-- Hiding overflow to prevent tooltip on tile-viewer from creating the 
+    scrollbar when it hits the bottom part of the window -->
   <body
-    class="container-fluid p-3"
+    class="container-fluid p-3 overflow-hidden"
     ng-controller="RegController as $ctrl"
     style="height: 100vh"
   >
@@ -133,8 +136,20 @@
               class="d-flex h-100 flex-column font-monospace"
             ></memory-viewer>
           </my-pane>
+          <my-pane title="Tiles">
+            <tile-viewer class="d-block h-100 overflow-y-auto"></tile-viewer>
+          </my-pane>
+          <my-pane title="Functions">
+            <function-list></function-list>
+          </my-pane>
+          <my-pane title="Plane A">
+            <plane-viewer plane="'a'" class="d-block h-100"></plane-viewer>
+          </my-pane>
+          <my-pane title="Plane B">
+            <plane-viewer plane="'b'" class="d-block h-100"></plane-viewer>
+          </my-pane>
           <my-pane title="Sprites">
-            <sprite-viewer class="h-100"></sprite-viewer>
+            <sprite-viewer class="d-block h-100"></sprite-viewer>
           </my-pane>
         </my-tabs>
       </div>

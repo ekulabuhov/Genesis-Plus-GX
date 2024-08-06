@@ -1,4 +1,5 @@
-/** @typedef {Partial<{
+/** 
+ * @typedef {Partial<{
  *  pc: number;
  *  prev_pc: number;
  *  sr: number;
@@ -7,31 +8,42 @@
  *  z: boolean;
  *  n: boolean;
  *  x: boolean;
- * }>} regs */
+ * }>} regs 
+ * 
+ * @typedef {{start_address: number, end_address: number, name?: string, references: string[]}} func
+ * */
 
 import { AsmViewerComponent } from "./asm-viewer/asm-viewer.component.js";
 import { BreakpointsComponent } from "./breakpoints/breakpoints.component.js";
+import { FunctionListComponent } from "./function-list/function-list.component.js";
 import { MemoryViewerComponent } from "./memory-viewer/memory-viewer.component.js";
 import { MenuComponent } from "./menu/menu.component.js";
 import { MenuService } from "./menu/menu.service.js";
+import { PlaneViewerComponent } from "./plane-viewer/plane-viewer.component.js";
 import { RegisterViewerComponent } from "./register-viewer/register-viewer.component.js";
-import { SpriteViewerComponent } from "./sprite-viewer/sprite-viewer.component.js";
+import { TileViewerComponent } from "./tile-viewer/tile-viewer.component.js";
 import { PaneComponent } from "./tabs/pane.component.js";
 import { TabsComponent } from "./tabs/tabs.component.js";
 import { WsService } from "./ws.service.js";
 import { Ym2612Component } from "./ym2612/ym2612.component.js";
+import { SpriteViewerComponent } from "./sprite-viewer/sprite-viewer.component.js";
+import { BreakpointsService } from "./breakpoints/breakpoints.service.js";
 
 const appModule = angular.module("app", []);
 appModule.component("memoryViewer", MemoryViewerComponent);
 appModule.component("registerViewer", RegisterViewerComponent);
 appModule.component("asmViewer", AsmViewerComponent);
-appModule.component("spriteViewer", SpriteViewerComponent);
+appModule.component("tileViewer", TileViewerComponent);
 appModule.component("breakpoints", BreakpointsComponent);
 appModule.component("appMenu", MenuComponent);
 appModule.service("menuService", MenuService);
+appModule.service("breakpointsService", BreakpointsService);
 appModule.component("myTabs", TabsComponent);
 appModule.component("myPane", PaneComponent);
 appModule.component("ym2612", Ym2612Component);
+appModule.component("functionList", FunctionListComponent);
+appModule.component("planeViewer", PlaneViewerComponent);
+appModule.component("spriteViewer", SpriteViewerComponent);
 
 appModule.controller(
   "RegController",
@@ -149,7 +161,7 @@ document.onkeydown = function (e) {
   }
 
   if (e.key === 'g' && e.metaKey) {
-    const response = prompt("Go to where?");
+    const response = prompt("Asm Viewer: go to where?");
     WsService.asmViewer.showAsm(response);
   }
 

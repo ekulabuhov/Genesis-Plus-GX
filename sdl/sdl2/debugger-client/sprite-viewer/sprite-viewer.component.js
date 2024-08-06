@@ -1,52 +1,62 @@
+import { getRgbPalettesFromCram } from "../utils.js";
 import { WsService } from "../ws.service.js";
 
 export const SpriteViewerComponent = {
   template: `
-      <div class="d-flex w-100 align-items-center" ng-repeat="palette in $ctrl.palettes" ng-init="paletteIndex=$index">
-        <div class="palette-label">Palette {{$index+1}}</div>
-        <div class="pixel-row d-flex" ng-repeat="color in palette track by $index">
-          <div style="background-color: #{{ $ctrl.evenPixel($index, paletteIndex) }}" class="pixel"></div>
-        </div>
-      </div>
-      <div class="flex-column d-flex" ng-repeat="sprite in $ctrl.sprites">
-        <div class="pixel-row d-flex" ng-repeat="row in sprite track by $index">
-          <div class="d-flex" ng-repeat="byte in row track by $index">
-              <div style="background-color: #{{ $ctrl.oddPixel(byte, 0) }}" class="pixel"></div>
-              <div style="background-color: #{{ $ctrl.evenPixel(byte, 0) }}" class="pixel"></div>
-          </div>
-        </div>
-      </div>`,
+  <table class="table">
+    <thead>
+      <tr>
+        <th ng-repeat="col in $ctrl.cols">
+          {{col.label}}
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr ng-repeat="row in $ctrl.rows" ng-init="rowIndex=$index">
+        <td ng-repeat="col in $ctrl.cols">
+          <span ng-if="col.type !== 'canvas'">{{row[col.field]}}</span>
+          <canvas id="canvas{{rowIndex}}" width="16" height="16" ng-if="col.type === 'canvas' && row[col.field]">{{row[col.field]}}</canvas>
+        </td>
+      </tr>
+    </tbody>
+  </table>`,
   controller: class SpriteViewerController {
-    /** @type {number[][]} */
-    vram;
-    /** @type {number[][]} */
-    cram;
-    /** @type {number[][][]} - [sprite_idx][y][x] */
-    sprites;
-
-    /**
-     * Mega Drive can handle 4 palettes 16 colors each at the same time
-     * This multi-array contains 4 palettes with 16 RGB values each
-     * @type {number[][]}
-     */
-    palettes;
-    /** @type {HTMLElement} */
-    view;
-    /** @type {import("angular").IScope} */
-    $scope;
+    cols = [
+      { label: "#", field: "index" },
+      { label: "Image", type: "canvas", field: "imageData" },
+      { label: "Location", field: "location" },
+      { label: "Size", field: "size" },
+      { label: "Link" },
+      { label: "Tile Index", field: "tileIndex" },
+      { label: "Palette Line", field: "paletteIdx" },
+      { label: "X-Flip", field: "horizontalFlip" },
+      { label: "Y-Flip", field: "verticalFlip" },
+      { label: "Priority" },
+    ];
+    /** @type {{
+     * index: number;
+     * location: string;
+     * size: string;
+     * link: number;
+     * tileIndex: number;
+     * imageData?: ImageData
+     * horizontalFlip: boolean
+     * verticalFlip: boolean
+     * paletteIdx: number
+     * }[]} */
+    rows = [];
 
     /**
      * @param {import("angular").IAugmentedJQuery} $element
      */
     constructor($element, $scope) {
       this.view = $element[0];
-      this.$scope = $scope;
 
       WsService.on("open", () => {
         // When pane is not selected - the height is set to 0
         // Monitor height changes so we know when this component is displayed
         let previousViewHeight = 0;
-        const resizeObserver = new ResizeObserver(() => {
+        const resizeObserver = new ResizeObserver(async () => {
           if (previousViewHeight !== 0) {
             previousViewHeight = this.view.clientHeight;
             return;
@@ -57,76 +67,112 @@ export const SpriteViewerComponent = {
             return;
           }
 
-          this.lazyLoad();
+          await this.lazyLoad();
+          $scope.$apply();
         });
 
         resizeObserver.observe(this.view);
       });
     }
 
-    refresh() {
-      // Each sprite is 8x8 pixels wide
-      // Each pixel is 4 bits (half a byte)
-      // One row is 32 bits or 4 bytes
-      // One sprite is 4x8=32 bytes
-      // Server sends data in 16 byte rows - therefore we need to reformat the array
-      // [sprite_idx][y][x]
-      const resizedVram = [];
-      this.vram.forEach((row, rowIndex) => {
-        row.forEach((byte, i) => {
-          const byteIndex = rowIndex * 16 + i;
-          const newRowIndex = Math.floor(byteIndex / 4);
-          const spriteIndex = Math.floor(byteIndex / 32);
-          resizedVram[spriteIndex] = resizedVram[spriteIndex] || [];
-          resizedVram[spriteIndex][newRowIndex] =
-            resizedVram[spriteIndex][newRowIndex] || [];
-          resizedVram[spriteIndex][newRowIndex][byteIndex % 4] = byte;
-        });
-      });
+    async lazyLoad() {
+      const { data: vram } = await WsService.showMemoryLocation(
+        0,
+        0xffff,
+        "vram"
+      );
 
-      this.sprites = resizedVram;
+      const palettes = await getRgbPalettesFromCram();
 
-      const newPalette = [[], [], [], []];
-      for (let ci = 0; ci < this.cram.length; ci += 2) {
-        const bytes = [...this.cram[ci], ...this.cram[ci + 1]];
-        for (let i = 0; i < 32; i += 2) {
-          const byte = bytes[i];
-          // Max brightness value for CSS color is 0xFF and for Genesis it's 0xE, multiply by 0x12 to convert between two
-          const blue = 0x12 * byte;
-          const green = (bytes[i + 1] >> 4) * 0x12;
-          const red = (bytes[i + 1] & 0xf) * 0x12;
-          newPalette[ci / 2][i / 2] = (red << 16) + (green << 8) + blue;
+      const base = 0xb000;
+      this.rows = [];
+
+      // Sprite table address is at 0xB000
+      for (let i = 0; i < 80 * 8; i += 8) {
+        const mem = vram[Math.floor((base + i) / 16)];
+        const j = i % 16;
+        let imageData;
+
+        const tileIdAndFlags = ((mem[j + 4] << 8) + mem[j + 5]);
+        const tileIndex = tileIdAndFlags & 0b11111111111;
+        const horizontalFlip = !!(tileIdAndFlags & (1 << 11));
+        const verticalFlip = !!(tileIdAndFlags & (1 << 12));
+        const paletteIdx = (tileIdAndFlags >> 13) & 3;
+        if (tileIndex) {
+          imageData = new ImageData(8, 8);
+          const tileBytes = [
+            ...vram[tileIndex * 2],
+            ...vram[tileIndex * 2 + 1],
+          ];
+          let offset = 0;
+          for (let y = 0; y < 8; y++) {
+            for (let x = 0; x < 4; x++) {
+              const tileByte = tileBytes[y * 4 + (horizontalFlip ? 3 - x : x)];
+
+              const evenPixel =
+                palettes[paletteIdx][
+                  horizontalFlip ? tileByte & 0xf : tileByte >> 4
+                ];
+              imageData.data[offset + 0] = evenPixel.red; // R value
+              imageData.data[offset + 1] = evenPixel.green; // G value
+              imageData.data[offset + 2] = evenPixel.blue; // B value
+              imageData.data[offset + 3] = 255; // A value
+              offset += 4;
+
+              const oddPixel =
+                palettes[paletteIdx][
+                  horizontalFlip ? tileByte >> 4 : tileByte & 0xf
+                ];
+              imageData.data[offset + 0] = oddPixel.red; // R value
+              imageData.data[offset + 1] = oddPixel.green; // G value
+              imageData.data[offset + 2] = oddPixel.blue; // B value
+              imageData.data[offset + 3] = 255; // A value
+              offset += 4;
+            }
+          }
         }
+
+        const x = {
+          index: this.rows.length,
+          // Y is byte 0-1 and X is 6-7
+          location: `${(mem[j + 6] << 8) + mem[j + 7]},${
+            (mem[j] << 8) + mem[j + 1]
+          }`,
+          size: `${(mem[j + 2] >> 2) + 1}x${(mem[j + 2] & 0b11) + 1}`,
+          link: mem[j + 3],
+          tileIndex,
+          imageData,
+        };
+
+        this.rows.push({
+          index: this.rows.length,
+          location: `${(mem[j + 6] << 8) + mem[j + 7]},${
+            (mem[j] << 8) + mem[j + 1]
+          }`,
+          size: `${(mem[j + 2] >> 2) + 1}x${(mem[j + 2] & 0b11) + 1}`,
+          link: mem[j + 3],
+          tileIndex,
+          imageData,
+          horizontalFlip,
+          verticalFlip,
+          paletteIdx
+        });
       }
 
-      this.palettes = newPalette;
-    }
-
-    lazyLoad() {
-      // Debouncing
-      clearTimeout(this.lazyLoadTimeoutId);
-      this.lazyLoadTimeoutId = setTimeout(async () => {
-        let response = await WsService.showMemoryLocation(0, 256, "vram");
-        this.vram = response.data;
-
-        response = await WsService.showMemoryLocation(0, 128, "cram");
-        this.cram = response.data;
-
-        this.refresh();
-        this.$scope.$apply();
-      }, 500);
-    }
-
-    evenPixel(byte, selectedPalette) {
-      return this.palettes[selectedPalette][byte & 0xf]
-        .toString(16)
-        .padStart(6, "0");
-    }
-
-    oddPixel(byte, selectedPalette) {
-      return this.palettes[selectedPalette][byte >> 4]
-        .toString(16)
-        .padStart(6, "0");
+      setTimeout(() => {
+        for (let i = 0; i < this.rows.length; i++) {
+          const element = this.rows[i];
+          if (element.imageData) {
+            /** @type {HTMLCanvasElement} */
+            const canvas = document.getElementById("canvas" + i);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) continue;
+            ctx.scale(2, 2);
+            ctx.putImageData(element.imageData, 0, 0);
+            ctx.drawImage(canvas, 0, 0);
+          }
+        }
+      }, 100);
     }
   },
 };

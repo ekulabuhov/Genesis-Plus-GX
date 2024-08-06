@@ -1,0 +1,23 @@
+.pixel {
+  width: 20px;
+  height: 20px;
+}
+
+.palette-label {
+  width: 80px;
+}
+
+tile-viewer {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.tile {
+  /* 1px border doesn't work here as it adds extra height to each tile 
+    that makes tiles jump a bit on every lazy load */
+  margin: 1px;
+}
+
+.pixel.hovered {
+  border: 1px solid;
+}

@@ -3,7 +3,7 @@
 
 #include <sqlite3.h>
 #include "storage.h"
-#include <sys/stat.h> 
+#include <sys/stat.h>
 
 sqlite3 *db;
 
@@ -21,7 +21,8 @@ void init_db(const char *romname)
     int file_exists = stat(filename, &filestat) == 0;
     char *sql;
 
-    if (!file_exists) {
+    if (!file_exists)
+    {
         stat("./sdl2/structure.sql", &filestat);
         FILE *f = fopen("./sdl2/structure.sql", "r");
         sql = malloc(filestat.st_size);
@@ -36,15 +37,17 @@ void init_db(const char *romname)
         exit(1);
     }
 
-    // Create structure for new databasw
-    if (!file_exists) {
+    // Create structure for new database
+    if (!file_exists)
+    {
         run_sql(sql);
     }
 }
 
 struct SqlResult run_sql(const char *sql, ...)
 {
-    if (db == NULL) {
+    if (db == NULL)
+    {
         printf("db must be initialzed\n");
         exit(1);
     }
@@ -64,14 +67,14 @@ struct SqlResult run_sql(const char *sql, ...)
     int rc = sqlite3_get_table(db, sql_formatted, &aResult, &nRow, &nCol, &zErrMsg);
     if (rc != SQLITE_OK)
     {
-        struct SqlResult r = { .zErrMsg = zErrMsg };
+        struct SqlResult r = {.zErrMsg = zErrMsg};
         return r;
         // printf("SQL error: %s\n", zErrMsg);
         // sqlite3_free(zErrMsg);
     }
 
     int rowsAffected = sqlite3_changes(db);
-    printf("RowsAffected: %d\n", rowsAffected);
+    printf("RowsReturned: %d RowsAffected: %d\n", nRow, rowsAffected);
 
     free(sql_formatted);
 
@@ -126,8 +129,9 @@ void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **mess
 
 fam *fam_new(size_t size)
 {
-    fam *fam1 = (fam *)malloc(sizeof(fam *) + size * sizeof(int));
+    fam *fam1 = malloc(sizeof(fam));
     fam1->len = size;
+    fam1->arr = malloc(sizeof(uint64_t) * size);
 
     return fam1;
 }
@@ -136,7 +140,7 @@ void fam_append(fam *fam1, int value)
 {
     fam1->len++;
     fam1->arr = realloc(fam1->arr, fam1->len * sizeof(int));
-    if (fam1 == NULL)
+    if (fam1->arr == NULL)
     {
         printf("failed to realloc fam1");
         exit(-1);
@@ -166,17 +170,16 @@ char *funcs(void)
     struct SqlResult result = run_sql("SELECT json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs))) from \
     (SELECT \
         f.*, \
-        NULLIF(json_group_array (json_object('address', printf ('%%X', i.address), 'func', ref_label.name, 'func_address', ref_f.start_address)), '[{\"address\":\"0\",\"func\":null,\"func_address\":null}]') AS refs, \
+        NULLIF(json_group_array (json_object('address', printf ('%%X', jt.instruction_address), 'func', ref_label.name, 'func_address', ref_f.start_address)), '[{\"address\":\"0\",\"func\":null,\"func_address\":null}]') AS refs, \
         l.name \
     from functions f \
     LEFT JOIN jump_tables jt ON jt.function_start_address = f.start_address \
-    LEFT JOIN instructions i ON jt.instruction_address = i.address \
-    LEFT JOIN labels l ON i.op_1 = l.address \
-    " // Find a function that surrounds referenced instruction
-                                      "LEFT JOIN functions ref_f ON i.address BETWEEN ref_f.start_address \
-		AND ref_f.end_address \
-    " // Get a label for referenced function
-                                      "LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \
+    LEFT JOIN labels l ON l.address = printf ('%%X', f.start_address) \n\
+    -- Find a function that surrounds referenced instruction \n\
+    LEFT JOIN functions ref_f ON jt.instruction_address BETWEEN ref_f.start_address \
+		AND ref_f.end_address \n\
+    -- Get a label for referenced function \n\
+    LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \
     GROUP BY f.start_address \
     ORDER BY f.start_address) t");
     return result.aResult[1];

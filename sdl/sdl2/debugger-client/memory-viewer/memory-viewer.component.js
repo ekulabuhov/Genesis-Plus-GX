@@ -244,8 +244,11 @@ export class MemoryViewerController {
       {
         label: "Go to...",
         click: () => {
-          const address = prompt("Go to where?");
+          let address = prompt("Memory: go to where?");
           if (address) {
+            if (address.indexOf("0x") === -1) {
+              address = "0x" + address;
+            }
             this.showMemoryLocation(address, this.selectedMemType);
           }
         }
@@ -260,8 +263,8 @@ export const MemoryViewerComponent = {
       <option value="rom">Cartridge ROM [$000000-$3FFFFF]</option>
       <option value="ram">68000 RAM [$FF0000-$FFFFFF]</option>
       <option value="z80">Z80 memory space [$A00000-$A0FFFF]</option>
-      <option value="vram">VRAM</option>
-      <option value="cram">CRAM</option>
+      <option value="vram">VRAM [$0000-$FFFF]</option>
+      <option value="cram">CRAM [$00-$7F]</option>
     </select>
     <div class="header">
       <div class="invisible">00000000</div>

@@ -15,7 +15,7 @@ struct Tuple
     int bra_destination;
     int last_address;
     int return_address;
-    fam branches;
+    fam *branches;
 };
 
 struct FromTo
@@ -179,7 +179,7 @@ struct Tuple find_rts(int address, size_t length, const unsigned char *code, csh
                         int entry_address = insn[i].address + insn[i].size - address + j * 2;
                         int offset = (code[entry_address] << 8) + code[entry_address+1];
                         int jump_to = insn[i].address + insn[i].size + offset;
-                        fam_append(&r.branches, jump_to);
+                        fam_append(r.branches, jump_to);
                     }
 
                     // Return to continue at bra_destination
@@ -252,7 +252,7 @@ struct Tuple find_rts(int address, size_t length, const unsigned char *code, csh
                 r.bra_destination = jump_to;
             }
 
-            fam_append(&r.branches, jump_to);
+            fam_append(r.branches, jump_to);
         }
     }
 
@@ -337,7 +337,7 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
             return f;
     }
 
-    struct Tuple r = {.return_address = 0};
+    struct Tuple r = {.return_address = 0, .branches = fam_new(0)};
     do
     {
         const unsigned char *code = read_rom(LENGTH, address);
@@ -350,9 +350,9 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
     f.end_address = r.return_address;
 
     // Visit all local branches
-    for (size_t i = 0; i < r.branches.len; i++)
+    for (size_t i = 0; i < r.branches->len; i++)
     {
-        int local_branch = r.branches.arr[i];
+        int local_branch = r.branches->arr[i];
         int local_branch_visited = 0;
         for (size_t j = 0; j < f.instruction_count; j++)
         {
@@ -385,7 +385,6 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
 
             r.return_address = 0;
 
-            int waiting_for_rts = 0;
             address = local_branch;
             do
             {
@@ -429,7 +428,8 @@ void store_in_db(struct Function f)
         sprintf(op_1, "NULL");
         int jump_to = 0;
         if ((strstr(insn.mnemonic, "jsr") == insn.mnemonic) ||
-            (strstr(insn.mnemonic, "jmp") == insn.mnemonic))
+            (strstr(insn.mnemonic, "jmp") == insn.mnemonic) ||
+            (strstr(insn.mnemonic, "bsr") == insn.mnemonic))
         {
             switch (insn.detail->m68k.operands[0].address_mode)
             {
@@ -439,6 +439,9 @@ void store_in_db(struct Function f)
                 break;
             case M68K_AM_PCI_DISP:
                 jump_to = insn.address + insn.detail->m68k.operands[0].mem.disp + 2;
+                break;
+            case M68K_AM_BRANCH_DISPLACEMENT:
+                jump_to = insn.address + insn.detail->m68k.operands[0].br_disp.disp + 2;
                 break;
             }
 
@@ -464,7 +467,7 @@ void store_in_db(struct Function f)
     }
 }
 
-fam *extracted_functions;
+static fam *extracted_functions;
 
 int extract_functions(int referenced_from, int address, rom_reader read_rom)
 {

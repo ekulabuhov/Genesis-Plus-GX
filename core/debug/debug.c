@@ -19,7 +19,7 @@
 // To read vram
 #include "vdp_ctrl.h"
 
-#include "../../sdl/sdl2/capstone.h"
+#include "../../sdl/sdl2/storage.h"
 #include "../../sdl/sdl2/rom_analyzer.h"
 
 // If set will execute one instruction and pause
@@ -143,7 +143,7 @@ static struct timespec start, end;
 
 static char *ym2612_buf;
 static int send_next = 0;
-const char* template = "{ \"type\": \"ym2612\", \"data\": [";
+const char *template = "{ \"type\": \"ym2612\", \"data\": [";
 static uint prev_pc = 0;
 
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value)
@@ -161,45 +161,6 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
         break;
 
     case HOOK_M68K_E:
-    {
-        unsigned short opc = m68k_read_immediate_16(prev_pc);
-        int is_jsr = (opc >> 6) == 314;
-        int is_jmp = (opc >> 6) == 315;
-        if (is_jsr || is_jmp)
-        {
-
-            if (is_jsr)
-            {
-                printf("jump to subroutine from %04X to %04X\n", prev_pc, m68k.pc);
-            }
-            else
-            {
-                printf("jump from %04X to %04X\n", prev_pc, m68k.pc);
-            }
-
-            int function_found = 0;
-            for (size_t i = 0; i < extracted_functions->len; i++)
-            {
-                if (extracted_functions->arr[i] == m68k.pc)
-                {
-                    function_found = 1;
-                    break;
-                }
-            }
-
-            if (function_found)
-            {
-                printf("existing function %04X\n", m68k.pc);
-            }
-            else
-            {
-                printf("new function %04X\n", m68k.pc);
-                fam_append(extracted_functions, m68k.pc);
-                extract_functions(prev_pc, m68k.pc, read_memory);
-            }
-        }
-    }
-
         if (dbg_in_interrupt && !break_in_interrupt)
         {
             unsigned int pc = REG_PC;
@@ -212,6 +173,31 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
 
             dbg_in_interrupt = 0; // we at rte
             break;
+        }
+
+        {
+            unsigned short opc = m68k_read_immediate_16(prev_pc);
+            int is_jsr = (opc >> 6) == 314;
+            int is_jmp = (opc >> 6) == 315;
+            if (is_jsr || is_jmp)
+            {
+                int function_found = 0;
+                for (size_t i = 0; i < extracted_functions->len; i++)
+                {
+                    if (extracted_functions->arr[i] == m68k.pc)
+                    {
+                        function_found = 1;
+                        break;
+                    }
+                }
+
+                if (!function_found)
+                {
+                    printf("new function %04X, sent by %04X from %04X\n", m68k.pc, opc, prev_pc);
+                    fam_append(extracted_functions, m68k.pc);
+                    extract_functions(prev_pc, m68k.pc, read_memory);
+                }
+            }
         }
 
         if (!dbg_trace)
@@ -322,8 +308,9 @@ unsigned char read_memory_byte(unsigned int address, char *type)
 
 void write_memory_byte(unsigned int address, unsigned int value)
 {
-    if (address >= 0xA04000 && address <= 0xA04003) {
-        z80_memory_w(address-0xA00000, value);
+    if (address >= 0xA04000 && address <= 0xA04003)
+    {
+        z80_memory_w(address - 0xA00000, value);
     }
 
     // We can't use m68ki_write_8 as it won't allow us to write to regions where CPU is not allowed to write (e.g. ROM)

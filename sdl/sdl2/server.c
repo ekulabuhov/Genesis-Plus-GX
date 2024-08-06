@@ -9,7 +9,7 @@
 
 // To get access to CPU registers
 #include "m68k.h"
-#include "capstone.h"
+#include "storage.h"
 // To unpause emu
 #include "main.h"
 #include "debug.h"
