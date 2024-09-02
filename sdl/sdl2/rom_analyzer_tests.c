@@ -3,6 +3,8 @@
 #include "rom_analyzer_tests.h"
 #include "munit/munit.h"
 #include "storage_tests.h"
+#include "rom_analyzer.h"
+#include "extract_function.h"
 
 #ifdef TEST_APP
 
@@ -86,7 +88,7 @@ test_extract_setup(const MunitParameter params[], void *user_data)
 
 MunitTest tests[] = {
     {
-        "/my-test",             /* name */
+        "/extract-test",             /* name */
         test_extract,           /* test */
         test_extract_setup,     /* setup */
         NULL,                   /* tear_down */
@@ -104,8 +106,8 @@ int main(int argc, char *argv[])
       {NULL, NULL, NULL, 0, MUNIT_SUITE_OPTION_NONE},
   };
   const MunitSuite suite = {
-      "/my-tests",            /* name */
-      NULL, //tests,                  /* tests */
+      "/extract-tests",            /* name */
+      tests,                  /* tests */
       (MunitSuite *)suites,   /* suites */
       1,                      /* iterations */
       MUNIT_SUITE_OPTION_NONE /* options */

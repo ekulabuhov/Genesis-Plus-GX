@@ -10,7 +10,7 @@ sqlite3 *db;
 void init_db(const char *romname)
 {
     // Copy romname so we don't trash passed value
-    char *filename = malloc(strlen(romname));
+    char *filename = malloc(strlen(romname) + 10);
     strcpy(filename, romname);
     // Remove extension
     strtok(filename, ".");
@@ -20,6 +20,8 @@ void init_db(const char *romname)
     struct stat filestat;
     int file_exists = stat(filename, &filestat) == 0;
     char *sql;
+
+    printf("Opening %s\n", filename);
 
     if (!file_exists)
     {
@@ -68,8 +70,8 @@ struct SqlResult run_sql(const char *sql, ...)
     if (rc != SQLITE_OK)
     {
         struct SqlResult r = {.zErrMsg = zErrMsg};
+        printf("SQL error: %s\n", zErrMsg);
         return r;
-        // printf("SQL error: %s\n", zErrMsg);
         // sqlite3_free(zErrMsg);
     }
 
@@ -82,42 +84,81 @@ struct SqlResult run_sql(const char *sql, ...)
     return r;
 }
 
-struct SqlResult get_instructions(uint32_t index, int as_json, size_t length_around)
+struct SqlResult get_instructions(uint32_t index, uint32_t address, int as_json, size_t length_around)
 {
-    const char *json_select = "SELECT json_group_array (json_object('address', t.address, 'mnemonic', mnemonic, 'op_str', ifnull(l.name,op_str), 'op_1', op_1, 'comment', ic.comment ))";
-    const char *sql_select = "SELECT t.address, mnemonic, ifnull(l.name,op_str) as op_str, op_1, ic.comment";
+    const char *json_select = "SELECT json_group_array (json_object('address', address, 'mnemonic', mnemonic, 'op_str', ifnull(name, op_str), 'op_1', op_1, 'comment', COMMENT, 'type', type))";
+    const char *sql_select = "SELECT address, mnemonic, ifnull(name,op_str) as op_str, op_1, comment";
 
-    return run_sql("%s\
-        FROM\
-    (SELECT\
-	    id,\
-	    row_number() OVER (ORDER BY address) AS rowNum,\
+    const char *body = "FROM (\
+	SELECT\
+		row_number() OVER (ORDER BY t.address) AS rowNum,\
+		*\
+	FROM (\
+    WITH RECURSIVE split(address, comment, str) AS (\
+        SELECT address, '', comment FROM instruction_comments\
+        UNION ALL SELECT\
+        address,\
+        substr(str, instr(str, X'0A')+1, instr(str, X'0A')),\
+        substr(str, instr(str, X'0A')+1)\
+        FROM split WHERE str!='' and instr(str, X'0A') > 0\
+    )\
+    SELECT\
+		0 AS id,\
+		start_address AS address,\
+		'FUN_' || printf ('%08X',\
+		start_address) AS mnemonic,\
+	    '' AS op_str,\
+	    0 AS size,\
+	    '' AS op_1,\
+        'label' as type,\
+        '' as comment \
+    FROM \
+	    functions\
+    UNION ALL\
+	SELECT\
+		i.id,\
+		i.address,\
+		mnemonic,\
+		op_str,\
+		size,\
+		op_1,\
+        '' as type,\
+        ic.comment\
+        -- substr(ic.comment, 0, instr(ic.comment, X'0A')) as comment\n\
+	FROM\
+		instructions i\
+        LEFT JOIN instruction_comments ic ON ic.address = i.address\
+    UNION ALL\
+    SELECT\
+        0 AS id,\
 	    address,\
-	    mnemonic,\
-	    op_str,\
-	    size,\
-        op_1\
-    FROM\
-	    instructions) t\
-        LEFT JOIN labels l ON t.op_1 = l.address\
-        LEFT JOIN instruction_comments ic ON ic.address = t.address\
-    where t.rowNum >= %d - %d and t.rowNum <= %d + %d\n",
-                   as_json ? json_select : sql_select,
-                   index, length_around, index, length_around);
+	    NULL as mnemonic,\
+	    '' AS op_str,\
+	    0 AS size,\
+	    '' AS op_1,\
+	    'comment' as type,\
+	    comment\
+    FROM split\
+    WHERE comment!='') t\
+	LEFT JOIN labels l ON t.op_1 = l.address) x";
+
+    if (address)
+    {
+        struct SqlResult rowNum = run_sql("SELECT rowNum %s WHERE address = 0x%X and type = ''", body, address);
+        index = atoi(rowNum.aResult[1]);
+        sqlite3_free_table(rowNum.aResult);
+    }
+
+    return run_sql("%s %s WHERE\
+	x.rowNum >= %d - %d\
+	AND x.rowNum <= %d + %d", as_json ? json_select : sql_select, body, index, length_around, index, length_around);
 }
 
 void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **message)
 {
     struct SqlResult count = run_sql("select count(*) from instructions");
 
-    if (address)
-    {
-        struct SqlResult rowNum = run_sql("select rowNum from (SELECT address, row_number() OVER (ORDER BY address) AS rowNum FROM instructions) t where t.address >= %d LIMIT 1", address);
-        index = atoi(rowNum.aResult[1]);
-        sqlite3_free_table(rowNum.aResult);
-    }
-
-    struct SqlResult result = get_instructions(index, 1, 100);
+    struct SqlResult result = get_instructions(index, address, 1, 100);
 
     *message = malloc(strlen(result.aResult[1]) + 100);
 
@@ -127,16 +168,16 @@ void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **mess
     sqlite3_free_table(count.aResult);
 }
 
-fam *fam_new(size_t size)
+struct fam *fam_new(size_t size)
 {
-    fam *fam1 = malloc(sizeof(fam));
+    struct fam *fam1 = malloc(sizeof(struct fam));
     fam1->len = size;
-    fam1->arr = malloc(sizeof(uint64_t) * size);
+    fam1->arr = malloc(sizeof(int) * size);
 
     return fam1;
 }
 
-void fam_append(fam *fam1, int value)
+void fam_append(struct fam *fam1, int value)
 {
     fam1->len++;
     fam1->arr = realloc(fam1->arr, fam1->len * sizeof(int));
@@ -149,11 +190,11 @@ void fam_append(fam *fam1, int value)
     fam1->arr[fam1->len - 1] = value;
 }
 
-fam *get_functions(void)
+struct fam *get_functions(void)
 {
     struct SqlResult result = run_sql("select start_address from functions");
 
-    fam *fam1 = fam_new(result.nRow);
+    struct fam *fam1 = fam_new(result.nRow);
 
     for (size_t i = 1; i <= result.nRow; i++)
     {
@@ -188,6 +229,11 @@ char *funcs(void)
 void create_label(uint32_t address, char *name)
 {
     run_sql("INSERT OR REPLACE INTO labels (address, name) VALUES ('%X', '%s')", address, name);
+}
+
+void create_system_label(uint32_t address, char *name)
+{
+    run_sql("INSERT OR REPLACE INTO labels (address, name, source) VALUES ('%X', '%s', 'system')", address, name);
 }
 
 struct SqlResult add_comment(uint32_t address, char *comment)

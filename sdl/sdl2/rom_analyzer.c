@@ -7,6 +7,8 @@
 
 #include "storage.h"
 #include "rom_analyzer.h"
+#include "extract_function.h"
+
 
 #define LENGTH 0x100
 
@@ -15,26 +17,58 @@ struct Tuple
     int bra_destination;
     int last_address;
     int return_address;
-    fam *branches;
+    struct Branches *branches;
 };
+
+enum BranchType
+{
+    UNKNOWN,
+    LABEL,
+    JUMP_TABLE
+};
+
+struct Branch
+{
+    uint32_t from;
+    uint32_t to;
+    enum BranchType type;
+};
+
+struct Branches
+{
+    uint32_t len;
+    struct Branch *arr;
+};
+
+struct Branches *branches_new(size_t size)
+{
+    struct Branches *fam1 = malloc(sizeof(struct Branches));
+    fam1->len = size;
+    fam1->arr = malloc(sizeof(struct Branch) * size);
+
+    return fam1;
+}
+
+void branches_append(struct Branches *branches, uint32_t from, uint32_t to, enum BranchType type)
+{
+    branches->len++;
+    branches->arr = realloc(branches->arr, branches->len * sizeof(struct Branch));
+    if (branches->arr == NULL)
+    {
+        printf("failed to realloc branches");
+        exit(-1);
+    }
+
+    struct Branch *branch = &branches->arr[branches->len - 1];
+    branch->from = from;
+    branch->to = to;
+    branch->type = type;
+}
 
 struct FromTo
 {
     int from;
     int to;
-};
-
-struct Function
-{
-    int start_address;
-    int end_address;
-    int referenced_from;
-    struct FromTo *functions;
-    int function_count;
-    int function_size;
-
-    cs_insn **instructions;
-    int instruction_count;
 };
 
 struct FromTo *visited_branches = NULL;
@@ -65,6 +99,13 @@ struct Tuple find_rts(int address, size_t length, const unsigned char *code, csh
     cs_insn *insn;
     int count = cs_disasm(handle, code, length, address, 0, &insn);
     printf("count: %d, code: %d\n", count, sizeof(code));
+
+    if (count == 0)
+    {
+        printf("Failed to disassemble given code\n");
+        r.return_address = address;
+        return r;
+    }
 
     cs_insn last_instruction = insn[count - 1];
     r.last_address = last_instruction.address + last_instruction.size;
@@ -177,9 +218,9 @@ struct Tuple find_rts(int address, size_t length, const unsigned char *code, csh
                     for (size_t j = 0; j < jump_table_size; j++)
                     {
                         int entry_address = insn[i].address + insn[i].size - address + j * 2;
-                        int offset = (code[entry_address] << 8) + code[entry_address+1];
+                        int offset = (code[entry_address] << 8) + code[entry_address + 1];
                         int jump_to = insn[i].address + insn[i].size + offset;
-                        fam_append(r.branches, jump_to);
+                        branches_append(r.branches, insn[i].address, jump_to, JUMP_TABLE);
                     }
 
                     // Return to continue at bra_destination
@@ -252,7 +293,7 @@ struct Tuple find_rts(int address, size_t length, const unsigned char *code, csh
                 r.bra_destination = jump_to;
             }
 
-            fam_append(r.branches, jump_to);
+            branches_append(r.branches, insn[i].address, jump_to, LABEL);
         }
     }
 
@@ -337,7 +378,7 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
             return f;
     }
 
-    struct Tuple r = {.return_address = 0, .branches = fam_new(0)};
+    struct Tuple r = {.return_address = 0, .branches = branches_new(0)};
     do
     {
         const unsigned char *code = read_rom(LENGTH, address);
@@ -348,11 +389,12 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
     } while (r.return_address == 0);
 
     f.end_address = r.return_address;
+    f.branches = r.branches;
 
     // Visit all local branches
     for (size_t i = 0; i < r.branches->len; i++)
     {
-        int local_branch = r.branches->arr[i];
+        int local_branch = r.branches->arr[i].to;
         int local_branch_visited = 0;
         for (size_t j = 0; j < f.instruction_count; j++)
         {
@@ -394,7 +436,8 @@ struct Function extract_function(int referenced_from, int address, rom_reader re
                 address = r.last_address;
             } while (next_instruction_address - r.last_address > 0 && r.return_address == 0);
 
-            if (r.return_address > f.end_address) {
+            if (r.return_address > f.end_address)
+            {
                 f.end_address = r.return_address;
             }
 
@@ -465,9 +508,32 @@ void store_in_db(struct Function f)
                 "VALUES ('%d', '%d')",
                 f.functions[i].from, f.functions[i].to);
     }
+
+    int first_jump = 1;
+    char system_label[40];
+    char jump_case = 'A';
+    for (size_t i = 0; i < f.branches->len; i++)
+    {
+        if (f.branches->arr[i].type == JUMP_TABLE)
+        {
+            run_sql("INSERT INTO jump_tables (instruction_address, function_start_address, type)"
+                    "VALUES ('%d', '%d', 'jump_table')",
+                    f.branches->arr[i].from, f.branches->arr[i].to);
+
+            if (first_jump)
+            {
+                first_jump = 0;
+                sprintf(system_label, "jump_table_%04X", f.branches->arr[i].from);
+                create_system_label(f.branches->arr[i].from, system_label);
+            }
+
+            sprintf(system_label, "jump_table_%04X_case_%c", f.branches->arr[i].from, jump_case++);
+            create_system_label(f.branches->arr[i].to, system_label);
+        }
+    }
 }
 
-static fam *extracted_functions;
+static struct fam *extracted_functions;
 
 int extract_functions(int referenced_from, int address, rom_reader read_rom)
 {
@@ -532,6 +598,202 @@ uint32_t endian_swap(uint32_t x)
            (x << 24);
 }
 
+int starts_with(char *main, char *part)
+{
+    return strstr(main, part) == main;
+}
+
+char *reg_to_string(char *result, m68k_reg reg)
+{
+    if (reg <= 8)
+    {
+        result[0] = 'D';
+        result[1] = '0' + reg - 1;
+    }
+    else if (reg <= 15)
+    {
+        result[0] = 'A';
+        result[1] = '0' + reg - 9;
+    }
+    else
+    {
+        return "unknown register";
+    }
+
+    return result;
+}
+
+// reg_states[0] is not used
+// reg_states[1] - reg_states[8] are D0-D7
+// reg_states[9] - reg_states[16] are A0-A7
+void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], rom_reader read_rom)
+{
+    char reg_string[3];
+    char line[40];
+
+    cs_m68k_op op_0 = insn.detail->m68k.operands[0];
+    cs_m68k_op op_1 = insn.detail->m68k.operands[1];
+    int instr_size = insn.detail->m68k.op_size.cpu_size;
+    comment[0] = 0;
+
+    if (insn.id == M68K_INS_LEA)
+    {
+        int value = insn.address + insn.detail->m68k.operands[0].mem.disp + 2;
+        reg_states[op_1.reg] = value;
+
+        sprintf(comment, "%s = %02X", reg_to_string(reg_string, op_1.reg), value);
+    }
+    else if (insn.id == M68K_INS_MOVEM)
+    {
+        if (op_0.address_mode == M68K_AM_REGI_ADDR_POST_INC)
+        {
+            for (size_t n = 0; n < 16; n++)
+            {
+                line[0] = 0;
+                if (op_1.register_bits & (1 << n))
+                {
+                    const unsigned char *code = read_rom(instr_size, reg_states[op_0.reg]);
+                    reg_states[op_0.reg] += instr_size;
+
+                    int value = (code[0] << 8) + code[1];
+                    if (instr_size == 4)
+                    {
+                        value = (value << 16) + (code[2] << 8) + code[3];
+                    }
+
+                    reg_states[n + 1] = value;
+
+                    sprintf(line, "%s = %02X", reg_to_string(reg_string, n + 1), value);
+                }
+
+                if (line[0] != 0)
+                {
+                    if (comment[0] == 0)
+                    {
+                        sprintf(comment, "%s", line);
+                    }
+                    else
+                    {
+                        sprintf(comment, "%s\\n%s", comment, line);
+                    }
+                }
+            }
+        }
+    }
+    else if (insn.id == M68K_INS_MOVE)
+    {
+        char op_values[2][20];
+        for (size_t i = 0; i < 2; i++)
+        {
+            cs_m68k_op op = insn.detail->m68k.operands[i];
+            switch (op.address_mode)
+            {
+            case M68K_AM_REGI_ADDR_DISP:
+            {
+                int op_value = reg_states[op.mem.base_reg] + op.mem.disp;
+                sprintf(op_values[i], "(%04X)", op_value);
+                break;
+            }
+            case M68K_AM_IMMEDIATE:
+                sprintf(op_values[i], "%X", op.imm);
+                break;
+            case M68K_AM_REGI_ADDR:
+                sprintf(op_values[i], "(%04X)", reg_states[op.reg]);
+                break;
+            case M68K_AM_REGI_ADDR_POST_INC:
+            {
+                const unsigned char *code = read_rom(instr_size, reg_states[op.reg]);
+                reg_states[op.reg] += instr_size;
+
+                int op_value = code[0];
+                reg_states[op_1.reg] &= 0xFFFFFF00;
+                reg_states[op_1.reg] |= op_value;
+                sprintf(op_values[i], "%04X", reg_states[op_1.reg]);
+                break;
+            }
+            case M68K_AM_REG_DIRECT_DATA:
+                if (i == 0) {
+                    // handles move.l d0, (a0) - we want to get the value of d0
+                    sprintf(op_values[i], "%04X", reg_states[op.reg]);
+                } else {
+                    // handles move.l (a0), d0 - we don't care about the value of d0
+                    sprintf(op_values[i], "%s", reg_to_string(reg_string, op.reg));
+                }
+                break;
+            default:
+                break;
+            }
+            printf("op %d: %s\n", i, op_values[i]);
+        }
+
+        sprintf(comment, "%s = %s", op_values[1], op_values[0]);
+        printf("comment: %s\n", comment);
+    }
+    else if (insn.id == M68K_INS_MOVEQ)
+    {
+        int op_0_value = op_0.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_0_value);
+    }
+    else if (insn.id == M68K_INS_MOVEA)
+    {
+        int op_0_value = reg_states[op_0.reg];
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_0_value);
+    }
+    else if (insn.id == M68K_INS_ADD)
+    {
+        int op_0_value = reg_states[op_0.reg] + reg_states[op_1.reg];
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_0_value);
+    }
+}
+
+void simulate_function(struct Function f, rom_reader read_rom)
+{
+    uint32_t reg_states[16];
+    memset(reg_states, 0, sizeof(reg_states));
+
+    char comment[200];
+
+    for (size_t i = 0; i < f.instruction_count; i++)
+    {
+        cs_insn insn = *f.instructions[i];
+
+        analyze_instruction(insn, comment, reg_states, read_rom);
+        if (comment[0] != 0)
+        {
+            add_comment(insn.address, comment);
+        }
+    }
+}
+
+// Returns results of executing instruction at address - used to show helpful hints on the assembly line
+void simulate_instruction(uint32_t address, uint32_t dar[16], char *comment, rom_reader read_rom)
+{
+    if (handle == 0)
+    {
+        if (cs_open(CS_ARCH_M68K, CS_MODE_M68K_000, &handle) != CS_ERR_OK)
+            return;
+
+        if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
+            return;
+    }
+
+    cs_insn *insns;
+    size_t length = 10;
+    unsigned char *code = read_rom(length, address);
+    int count = cs_disasm(handle, code, length, address, 1, &insns);
+    if (count > 0)
+    {
+        cs_insn insn = insns[0];
+        // Copy DAR to reg_states as analyze_instruction can modify it
+        uint32_t reg_states[16];
+        memset(reg_states, 0, sizeof(reg_states));
+        memcpy(reg_states + 1, dar, sizeof(uint32_t) * 15);
+        analyze_instruction(insn, comment, reg_states, read_rom);
+
+        cs_free(insns, count);
+    }
+}
+
 // Call this to populate database with byte placeholders
 void populate_data(FILE *pFile, int address, int length, int size)
 {
@@ -592,9 +854,11 @@ rom_reader init_file_reader(char *filename)
     return read_from_file;
 }
 
-struct SqlResult must_run_sql(const char *sql) {
+struct SqlResult must_run_sql(const char *sql)
+{
     struct SqlResult result = run_sql(sql);
-    if (result.zErrMsg) {
+    if (result.zErrMsg)
+    {
         printf("SQL error: %s\n", result.zErrMsg);
         exit(1);
     }
@@ -603,7 +867,8 @@ struct SqlResult must_run_sql(const char *sql) {
 #ifdef OWN_APP
 int main(int argc, char **argv)
 {
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fputs("Please provide a filename\n", stderr);
         exit(1);
     }
@@ -614,6 +879,7 @@ int main(int argc, char **argv)
     must_run_sql("DELETE FROM \"instructions\";");
     must_run_sql("DELETE FROM \"functions\";");
     must_run_sql("DELETE FROM \"jump_tables\";");
+    must_run_sql("DELETE FROM \"labels\" WHERE source = 'system';");
 
     init_file_reader(argv[1]);
 

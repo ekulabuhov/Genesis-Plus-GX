@@ -17,6 +17,9 @@
 // To access system_reset()
 #include "shared.h"
 
+// For simulate_instruction()
+#include "rom_analyzer.h"
+
 char *regs_as_json();
 char *read_memory_as_json(uint32_t address, uint16_t size, char *type);
 uint32_t read_number_token();
@@ -64,14 +67,15 @@ void debug_event_handler(dbg_event_t type, void *data)
 		ws_sendframe_txt(NULL, regs_as_json());
 	}
 
-	if (type == DBG_YM2612) 
+	if (type == DBG_YM2612)
 	{
-		char* json = (char*)data;
+		char *json = (char *)data;
 		ws_sendframe_txt(NULL, json);
 	}
 }
 
-void send_cram_values() {
+void send_cram_values()
+{
 	ws_sendframe_txt(NULL, read_memory_as_json(0, 32 * 4, "cram"));
 }
 
@@ -264,6 +268,10 @@ uint32_t read_number_token()
 
 char *regs_as_json()
 {
+	char comment[200];
+	comment[0] = 0;
+	simulate_instruction(m68k.pc, m68k.dar, comment, read_memory);
+
 	char *message = malloc(500);
 	sprintf(message, "{ \"type\": \"regs\", \"data\": {"
 					 "\"pc\": %d, "
@@ -285,7 +293,8 @@ char *regs_as_json()
 					 "\"a7\": %d, "
 					 "\"sp\": %d, "
 					 "\"sr\": %d, "
-					 "\"prev_pc\": %d "
+					 "\"prev_pc\": %d, "
+					 "\"comment\": \"%s\""
 					 "}}",
 			m68k.pc,
 			m68k.dar[0],
@@ -296,17 +305,18 @@ char *regs_as_json()
 			m68k.dar[5],
 			m68k.dar[6],
 			m68k.dar[7],
-			m68k.dar[8],
+			m68k.dar[8], // A0
 			m68k.dar[9],
 			m68k.dar[10],
 			m68k.dar[11],
 			m68k.dar[12],
 			m68k.dar[13],
 			m68k.dar[14],
-			m68k.dar[15],
+			m68k.dar[15], // A7
 			m68k.dar[15],
 			m68k_get_reg(M68K_REG_SR),
-			m68k.prev_pc);
+			m68k.prev_pc,
+			comment);
 
 	return message;
 }

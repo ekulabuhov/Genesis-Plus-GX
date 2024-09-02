@@ -99,8 +99,32 @@ unsigned short cram_9b_to_16b(unsigned short data)
     return (unsigned short)(((data & 0x1C0) << 3) | ((data & 0x038) << 2) | ((data & 0x007) << 1));
 }
 
+void read_string(char *str, unsigned int address)
+{
+    for (int i = 0; i < 256; i++)
+    {
+        str[i] = m68ki_read_8(address + i);
+        if (str[i] == 0)
+        {
+            break;
+        }
+    }
+}
+
 void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
+    if (type == HOOK_M68K_W)
+    {
+        // Prints debug messages from ROM to terminal
+        // Send string pointer to this address within the ROM to display the message
+        if (address == 0xa14400)
+        {
+            char log_message[256];
+            read_string(log_message, value);
+            printf("[ROM]: %s\n", log_message);
+        }
+    }
+
     breakpoint_t *bp;
     for (bp = first_bp; bp; bp = next_breakpoint(bp))
     {
@@ -123,7 +147,10 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
 
         if (type == HOOK_M68K_W)
         {
-            printf("ram write to address %u, width: %d, value: %u\n", address, width, value);
+            // printf("ram write to address %u, width: %d, value: %u\n", address, width, value);
+            // RAM is located at 0xFF0000 - 0xFFFFFF
+            // Address we're getting is full 32-bit address, so we need to mask it
+            address = address & 0xFFFFFF;
         }
 
         if (bp->condition_provided && bp->value_equal != value)
@@ -138,7 +165,7 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
     }
 }
 
-static fam *extracted_functions;
+static struct fam *extracted_functions;
 static struct timespec start, end;
 
 static char *ym2612_buf;

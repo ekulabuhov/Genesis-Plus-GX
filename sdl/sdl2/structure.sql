@@ -3,7 +3,7 @@ CREATE UNIQUE INDEX "address_uniq" ON "instructions" ("address");
 
 CREATE TABLE "instruction_comments" ("id" integer,"address" int NOT NULL,"comment" text, PRIMARY KEY (id));
 
-CREATE TABLE "labels" ("id" integer,"address" text,"name" text, PRIMARY KEY (id));
+CREATE TABLE "labels" ("id" integer,"address" text,"name" text, "source" text, PRIMARY KEY (id));
 CREATE UNIQUE INDEX "labels_address_uniq" ON "labels" ("address");
 
 CREATE TABLE "functions" ("id" integer,"start_address" integer,"end_address" integer, PRIMARY KEY (id));
