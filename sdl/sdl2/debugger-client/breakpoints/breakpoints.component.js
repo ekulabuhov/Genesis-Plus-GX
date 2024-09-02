@@ -5,7 +5,7 @@
  * write: boolean;
  * address: string;
  * enabled: boolean;
- * type: 'rom' | 'vram' | 'cram';
+ * type: 'rom' | 'vram' | 'cram' | 'ram';
  * value_equal: string;
  * }>} Breakpoint */
 
@@ -74,6 +74,7 @@ export const BreakpointsComponent = {
     }
 
     /**
+     * Right click context menu
      * @param {MouseEvent} event
      * @param {Breakpoint} bpt
      */

@@ -1,6 +1,10 @@
 import { WsService } from "./ws.service.js";
 
-export function displayHex(val, size) {
+/**
+ * @param {number | undefined} val
+ * @param {string | undefined} [size]
+ */
+export function toHex(val, size) {
   if (val === undefined) {
     return;
   }

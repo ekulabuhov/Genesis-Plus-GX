@@ -18,6 +18,9 @@
 
 .op_str {
   color: #ce9178;
+  width: 220px;
+  display: inline-flex;
+  white-space: nowrap;
 }
 
 .disasm-window {

@@ -1,3 +1,4 @@
+import { toHex } from "../utils.js";
 import { WsService } from "../ws.service.js";
 
 export class MemoryViewerController {
@@ -121,7 +122,7 @@ export class MemoryViewerController {
   }
 
   updateSelectedHex(/** @type {KeyboardEvent} */ event) {
-    const totalSize = this.memory.length * 16;
+    const totalSize = this.topOffset + this.memorySize[this.selectedMemType];
 
     if (
       ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(
@@ -193,9 +194,7 @@ export class MemoryViewerController {
       /** @type {WebSocket} */
       const ws = window["ws"];
       ws.send(
-        `memw 0x${this.selected
-          .toString(16)
-          .toUpperCase()} ${value} ${this.selectedMemType}`
+        `memw 0x${toHex(this.selected)} ${toHex(value)} ${this.selectedMemType}`
       );
 
       if (this.selected + 1 < totalSize) {
@@ -228,6 +227,7 @@ export class MemoryViewerController {
     }
   }
 
+  // Select between ROM, RAM, VRAM, etc.
   onSelectMemType() {
     this.setTopOffset();
 

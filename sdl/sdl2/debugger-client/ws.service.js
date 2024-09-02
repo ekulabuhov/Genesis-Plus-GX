@@ -51,7 +51,7 @@ export class WsService {
     }
 
     if (bpt.read) {
-      if (!bpt.type || bpt.type === "rom") {
+      if (!bpt.type || (bpt.type === "rom" || bpt.type === "ram")) {
         type |= 2;
       } else if (bpt.type === "vram") {
         type |= 8;
@@ -61,7 +61,7 @@ export class WsService {
     }
 
     if (bpt.write) {
-      if (!bpt.type || bpt.type === "rom") {
+      if (!bpt.type || (bpt.type === "rom" || bpt.type === "ram")) {
         type |= 4;
       } else if (bpt.type === "vram") {
         type |= 16;
@@ -91,7 +91,7 @@ export class WsService {
   }
 
   /**
-   * @param {string|number} address
+   * @param {string|number} address - decimal number or decimal/hex string
    * @param {number} size
    * @param {'rom' | 'vram' | 'cram'} [type]
    * 

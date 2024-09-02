@@ -1,20 +1,20 @@
-import { displayHex } from "../utils.js";
 import { WsService } from "../ws.service.js";
 import { describeInstruction } from "./describe-instruction.js";
+import { explainOperation } from "./explain-operation.js";
+
+/**
+ * @typedef {Object} instruction
+ * @prop {number} address - position of the instruction
+ * @prop {string} mnemonic - instruction name (e.g. 'jsr')
+ * @prop {string} [op_1] - value of the first operand (e.g. 'CD8')
+ * @prop {string} op_str - label of the first operand (e.g. 'FUN_copyDataToRam')
+ * @prop {string} [explain] - is used to add context to executed instruction, e.g. explain type of VDP operation
+ * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
+ * @prop {string} comment
+ * @prop {'label' | 'empty'} [type] - modifies how data is rendered, e.g. labels omit addresses at the beginning
+ */
 
 export class AsmViewerController {
-  /**
-   * @typedef {Object} instruction
-   * @prop {number} address - position of the instruction
-   * @prop {string} mnemonic - instruction name (e.g. 'jsr')
-   * @prop {string} [op_1] - value of the first operand (e.g. 'CD8')
-   * @prop {string} op_str - label of the first operand (e.g. 'FUN_copyDataToRam')
-   * @prop {string} explain - is used to add context to executed instruction, e.g. explain type of VDP operation
-   * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
-   * @prop {string} comment
-   * @prop {'label' | 'empty'} [type] - modifies how data is rendered, e.g. labels omit addresses at the beginning
-   */
-
   /** @type {instruction[]} */
   asm = [];
   debugLineTop = 0;
@@ -58,11 +58,7 @@ export class AsmViewerController {
 
     WsService.on("message", (data) => {
       if (data.type === "asm") {
-        // const labelCount =
-        //   this.funcs.findLastIndex(
-        //     (func) => func.start_address < data.data[0].address
-        //   ) + 1;
-        this.firstInstructionIndex = data.index;// + labelCount;
+        this.firstInstructionIndex = data.index;
       }
     });
 
@@ -86,13 +82,22 @@ export class AsmViewerController {
         }, 500);
       }
 
+      // Y pixel position of the last instruction
       const lastTop = (this.firstInstructionIndex + this.asm.length) * 24;
-      if (el.scrollTop > lastTop - el.clientHeight * 3) {
+      // If there are less than 2 screens available below (current screen included) - load more data
+      if (el.scrollTop > lastTop - el.clientHeight * 2) {
         console.log("should load down");
         this.stopScrollEvents = true;
         setTimeout(() => {
-          const currentInstructionIdx = Math.ceil(el.scrollTop / 24 + 12);
-          WsService.getAsm({ index: currentInstructionIdx });
+          const bottomInstructionIdx = Math.ceil(
+            el.scrollTop / 24 + el.clientHeight / 24
+          );
+          const addr =
+            this.asm[bottomInstructionIdx - this.firstInstructionIndex]
+              ?.address;
+          console.log({ addr: addr?.toString(16) });
+
+          WsService.getAsm({ index: bottomInstructionIdx });
         }, 500);
       }
     };
@@ -106,7 +111,10 @@ export class AsmViewerController {
     this.breakpointMarkers = this.bps.breakpoints.reduce((acc, bp) => {
       const instrIndex = this.asm.findIndex(
         (a) =>
-          bp.type === "rom" && bp.address && a.address == parseInt(bp.address)
+          bp.type === "rom" &&
+          bp.address &&
+          a.address == parseInt(bp.address) &&
+          !a.type
       );
       if (instrIndex !== -1) {
         acc.push((instrIndex + this.firstInstructionIndex) * 24);
@@ -128,18 +136,7 @@ export class AsmViewerController {
   $onChanges(changesObj) {
     if (changesObj["asm"]?.currentValue) {
       this.insertFunctionLabels();
-
-      // Support for multi-line comments
-      this.asm
-        .filter((insn) => insn.comment?.includes("\n"))
-        .forEach((insn) => {
-          const i = this.asm.indexOf(insn);
-          const extra_lines = insn.comment.split("\n").length - 1;
-          const extra_insns = Array.from({ length: extra_lines }).map((_) => ({
-            type: "empty",
-          }));
-          this.asm.splice(i + 1, 0, ...extra_insns);
-        });
+      this.updateBreakpointMarkers();
 
       if (this.stopScrollEvents) {
         this.stopScrollEvents = false;
@@ -158,18 +155,11 @@ export class AsmViewerController {
 
   insertFunctionLabels() {
     this.funcs.forEach((func) => {
-      const fa = this.asm.findIndex(
+      const instruction = this.asm.find(
         (asm) => asm.address === func.start_address
       );
-      if (fa !== -1) {
-        this.asm.splice(fa, 0, {
-          mnemonic:
-            func.name ||
-            `FUN_${func.start_address.toString(16).padStart(8, "0")}`,
-          type: "label",
-          references: func.references,
-          address: func.start_address,
-        });
+      if (instruction) {
+        instruction.references = func.references;
       }
     });
   }
@@ -214,8 +204,6 @@ export class AsmViewerController {
     const instrIndex = this.asm.indexOf(instr);
     this.debugLineTop = (instrIndex + this.firstInstructionIndex) * 24 + 2;
 
-    this.updateBreakpointMarkers();
-
     // Below logic is called when you step through code
     const marginInLines = 3;
     // If we're outside of current listing - jump to current instruction
@@ -245,171 +233,11 @@ export class AsmViewerController {
       });
     }
 
-    if (instr.mnemonic.split(".")[0] === "add") {
-      const operands = instr.op_str.split(", ");
-      let fromValue, toValue;
-      if (/^[a,d][0-7]$/.test(operands[0])) {
-        fromValue = this.regs[operands[0]];
-      }
+    const { explain } = explainOperation(instr, this.regs);
+    instr.explain = explain;
 
-      if (/^[a,d][0-7]$/.test(operands[1])) {
-        toValue = this.regs[operands[1]];
-      }
-
-      if (fromValue && toValue) {
-        instr.explain = `${operands[1]}=${displayHex(fromValue + toValue)}`;
-      }
-    }
-
-    if (instr.mnemonic.split(".")[0] === "move") {
-      const operands = instr.op_str.split(", ");
-      let fromValue, toValue;
-      if (/^[a,d][0-7]$/.test(operands[0])) {
-        fromValue = this.regs[operands[0]];
-      } else if (/^#\$[0-9,a-f]{4}$/.test(operands[0])) { // E.g. plain number: #$8f02
-        fromValue = parseInt(operands[0].replace('#$', '0x'));
-      } 
-
-      if (operands[1].indexOf("(") !== -1) {
-        operands[1] = operands[1].replace(/[(,)]/g, "");
-        toValue = this.regs[operands[1]];
-      }
-
-      if (fromValue !== undefined && toValue !== undefined) {
-        instr.explain = `${displayHex(toValue)}=${displayHex(
-          fromValue,
-          instr.mnemonic.split(".")[1]
-        )}`;
-
-        if (toValue === 0xc00004) {
-          if ((fromValue & 0xff00) === 0x8100) {
-            instr.valTooltip = `mode set register #2\n\n`;
-            const m2 = fromValue & 8;
-            const m1 = fromValue & 16;
-            const ie0 = fromValue & 32;
-            const disp = fromValue & 64;
-            instr.valTooltip += `set vertical resolution to ${
-              m2 ? "30" : "28"
-            } tiles\n`;
-            instr.valTooltip += `${m1 ? "allow" : "forbid"} DMA operations\n`;
-            instr.valTooltip += `${
-              ie0 ? "enable" : "disable"
-            } vblank interrupt\n`;
-            instr.valTooltip += `${disp ? "enable" : "disable"} rendering\n`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8200) {
-            instr.valTooltip = `plane A table address (divided by $2000)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8300) {
-            instr.valTooltip = `window table base address (divided by $800). In H40 mode, WD11 must be 0.`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8400) {
-            instr.valTooltip = `plane B table base address (divided by $2000)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8500) {
-            instr.valTooltip = `sprite table base address (divided by $200). In H40 mode, AT9 must be 0.`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8700) {
-            instr.valTooltip = `background color`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8a00) {
-            instr.valTooltip = `hblank interrupt rate\n\nhow many lines to wait between hblank interrupts`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8b00) {
-            instr.valTooltip = `mode set register #3`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8c00) {
-            instr.valTooltip = `mode set register #4\n\n`;
-            const rs = fromValue & 0x81;
-            const lsm = fromValue & 6;
-            const ste = fromValue & 8;
-
-            instr.valTooltip += `horizontal resolution: ${
-              rs === 0x81 ? 40 : 32
-            } tiles\n`;
-            instr.valTooltip += `${
-              ste ? "enable" : "disable"
-            } shadow/highlight\n`;
-            instr.valTooltip += `${lsm ? "interlaced mode" : "no interlacing"}`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8d00) {
-            instr.valTooltip = `hscroll table base address (divided by $400)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x8f00) {
-            instr.valTooltip = `autoincrement amount (in bytes)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9000) {
-            instr.valTooltip = `tilemap size\n\n`;
-            const hzs = fromValue & 3;
-            const vzs = (fromValue >> 4) & 3;
-            instr.valTooltip = `Size in tiles: ${(hzs + 1) * 32}x${
-              (vzs + 1) * 32
-            }`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9100) {
-            instr.valTooltip = `window X division`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9200) {
-            instr.valTooltip = `window Y division`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9300) {
-            instr.valTooltip = `DMA length (low)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9400) {
-            instr.valTooltip = `DMA length (high)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9500) {
-            instr.valTooltip = `DMA source (low)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9600) {
-            instr.valTooltip = `DMA source (middle)`;
-          }
-
-          if ((fromValue & 0xff00) === 0x9700) {
-            instr.valTooltip = `DMA source (high)\n\n`;
-            const dmd = (fromValue & 0xff) >> 6;
-            const op = {
-              0: "DMA transfer (DMD0 becomes SA23)",
-              1: "DMA transfer (DMD0 becomes SA23)",
-              2: "VRAM fill",
-              3: "VRAM copy",
-            };
-
-            instr.valTooltip += op[dmd];
-          }
-        }
-
-        if (toValue === 0xa00000) {
-          instr.valTooltip = `$A00000 is the start of Z80 RAM`;
-        }
-
-        if (toValue === 0xa11100) {
-          if (fromValue === 0x100) {
-            instr.valTooltip = `Stop Z80 with BusReq to access Z80 memory`;
-          }
-        }
-
-        if (toValue === 0xa12100) {
-          instr.valTooltip = `Z80 reset control register`;
-        }
-      }
+    if (instr.comment !== this.regs.comment && !instr.explain) {
+      instr.explain = this.regs.comment;
     }
 
     const branchInstructions = [
@@ -536,7 +364,7 @@ export class AsmViewerController {
             this.firstInstructionIndex +
             3
         ]?.address;
-      
+
       if (currentInstructionAddress) {
         this.scrollHistory.push(currentInstructionAddress.toString(16));
       }
@@ -658,7 +486,7 @@ export const AsmViewerComponent = {
                     {{pa.mnemonic}}
                 </span>
                 <span ng-if="!pa.op_1" class="op_str">
-                    {{pa.op_str}}
+                    <span class="text-truncate">{{pa.op_str}}</span>
                 </span>
                 <button class="btn btn-link p-0" ng-if="pa.op_1" ng-click="$ctrl.onOpClick($event, pa)">
                     {{pa.op_str}}
@@ -674,7 +502,6 @@ export const AsmViewerComponent = {
     regs: "<",
     asm: "<",
     showBytes: "<",
-    firstInstructionIndex: "<",
     totalInstructionCount: "<",
   },
   controller: AsmViewerController,

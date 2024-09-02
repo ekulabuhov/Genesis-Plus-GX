@@ -1,4 +1,4 @@
-import { displayHex } from "../utils.js";
+import { toHex } from "../utils.js";
 import { WsService } from "../ws.service.js";
 
 export const RegisterViewerComponent = {
@@ -151,7 +151,7 @@ export const RegisterViewerComponent = {
 
       event.preventDefault();
 
-      const displayValue = displayHex(this.regs[reg.toLowerCase()]);
+      const displayValue = toHex(this.regs[reg.toLowerCase()]);
 
       const menu = [
         {
