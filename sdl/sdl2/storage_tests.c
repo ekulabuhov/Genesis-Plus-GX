@@ -16,7 +16,9 @@ static MunitResult test_add_comment(const MunitParameter params[], void *data)
     munit_assert_null(result.zErrMsg);
     munit_assert_int(result.rowsAffected, ==, 1);
 
-    result = get_instructions(1, 0, 0, 0);
+    uint32_t index = 1;
+    char *errMsg;
+    result = get_instructions(&index, 0, 0, 0, &errMsg);
     // assert column name
     munit_assert_string_equal(result.aResult[4], "comment");
     // assert column content

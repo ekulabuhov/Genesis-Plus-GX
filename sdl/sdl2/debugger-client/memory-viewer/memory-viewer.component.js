@@ -1,4 +1,4 @@
-import { toHex } from "../utils.js";
+import { to0xHex } from "../utils.js";
 import { WsService } from "../ws.service.js";
 
 export class MemoryViewerController {
@@ -194,7 +194,7 @@ export class MemoryViewerController {
       /** @type {WebSocket} */
       const ws = window["ws"];
       ws.send(
-        `memw 0x${toHex(this.selected)} ${toHex(value)} ${this.selectedMemType}`
+        `memw ${to0xHex(this.selected)} ${to0xHex(value)} ${this.selectedMemType}`
       );
 
       if (this.selected + 1 < totalSize) {
@@ -204,7 +204,7 @@ export class MemoryViewerController {
   }
 
   /**
-   * @param {string} address
+   * @param {string} address - decimal "1234" or hex "0x4321"
    * @param {memTypes} type
    */
   showMemoryLocation(address, type) {

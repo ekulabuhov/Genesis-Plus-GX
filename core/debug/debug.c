@@ -158,7 +158,7 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
 
         if ((address <= (bp->address + bp->width)) && ((address + width) >= bp->address))
         {
-            printf("breakpoint hit at addr: 0x%X, type: %u, value: 0x%X\n", address, type, value);
+            printf("breakpoint hit at addr: 0x%X, type: %u, width: %d, value: 0x%X\n", address, type, width, value);
             dbg_paused = 1;
             break;
         }

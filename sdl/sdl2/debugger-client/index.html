@@ -148,7 +148,7 @@
             <plane-viewer plane="'b'" class="d-block h-100"></plane-viewer>
           </my-pane>
           <my-pane title="Sprites">
-            <sprite-viewer class="d-block h-100"></sprite-viewer>
+            <sprite-viewer base="$ctrl.regs.satb" class="d-block h-100 overflow-auto" on-view-memory="$ctrl.viewMemory(address, type)"></sprite-viewer>
           </my-pane>
         </my-tabs>
       </div>

@@ -7,6 +7,7 @@
  * @prop {boolean?} enabled
  * @prop {'rom' | 'vram' | 'cram'} type
  * @prop {string} [value_equal]
+ * @prop {string} [comment]
  **/
 
 const defaultBreakpoint = { edit: true, enabled: true, type: "rom" };

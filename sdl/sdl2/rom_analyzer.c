@@ -9,7 +9,6 @@
 #include "rom_analyzer.h"
 #include "extract_function.h"
 
-
 #define LENGTH 0x100
 
 struct Tuple
@@ -461,8 +460,13 @@ void dump_visited_branches(void)
 
 void store_in_db(struct Function f)
 {
-    run_sql("INSERT INTO  \"functions\" (\"start_address\", \"end_address\") VALUES ('%d', '%d')\n", f.start_address,
-            f.end_address);
+    // referenced_from is 0 when we jump to the code that wasn't decompiled yet
+    // There's no way to know if we found the beginning of the function - so don't save it
+    if (f.referenced_from != 0)
+    {
+        run_sql("INSERT INTO  \"functions\" (\"start_address\", \"end_address\") VALUES ('%d', '%d')\n", f.start_address,
+                f.end_address);
+    }
 
     for (size_t i = 0; i < f.instruction_count; i++)
     {
@@ -517,7 +521,7 @@ void store_in_db(struct Function f)
         if (f.branches->arr[i].type == JUMP_TABLE)
         {
             run_sql("INSERT INTO jump_tables (instruction_address, function_start_address, type)"
-                    "VALUES ('%d', '%d', 'jump_table')",
+                    "VALUES (%d, %d, 'jump_table')",
                     f.branches->arr[i].from, f.branches->arr[i].to);
 
             if (first_jump)
@@ -529,6 +533,12 @@ void store_in_db(struct Function f)
 
             sprintf(system_label, "jump_table_%04X_case_%c", f.branches->arr[i].from, jump_case++);
             create_system_label(f.branches->arr[i].to, system_label);
+        }
+        else
+        {
+            run_sql("INSERT INTO jump_tables (instruction_address, function_start_address, type)"
+                    "VALUES (%d, %d, 'local_branch')",
+                    f.branches->arr[i].from, f.branches->arr[i].to);
         }
     }
 }
@@ -623,10 +633,22 @@ char *reg_to_string(char *result, m68k_reg reg)
     return result;
 }
 
+int read_value(uint32_t address, uint32_t size, rom_reader read_memory)
+{
+    const unsigned char *code = read_memory(size, address);
+    int value = 0;
+    for (size_t i = 0; i < size; i++)
+    {
+        value += code[i] << (8 * (size - i - 1));
+    }
+
+    return value;
+}
+
 // reg_states[0] is not used
 // reg_states[1] - reg_states[8] are D0-D7
 // reg_states[9] - reg_states[16] are A0-A7
-void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], rom_reader read_rom)
+void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[17], rom_reader read_memory)
 {
     char reg_string[3];
     char line[40];
@@ -636,12 +658,45 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], r
     int instr_size = insn.detail->m68k.op_size.cpu_size;
     comment[0] = 0;
 
-    if (insn.id == M68K_INS_LEA)
+    if (insn.id == M68K_INS_ADD)
+    {
+        int mask = pow(2, instr_size * 8) - 1;
+        int op_1_value = (reg_states[op_0.reg] + reg_states[op_1.reg]) & mask;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
+    }
+    else if (insn.id == M68K_INS_ADDI)
+    {
+        int op_0_value = reg_states[op_0.reg] + op_1.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
+    }
+    else if (insn.id == M68K_INS_ADDQ)
+    {
+        int op_1_value = reg_states[op_1.reg] + op_0.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
+    }
+    else if (insn.id == M68K_INS_ANDI)
+    {
+        int op_1_value = reg_states[op_1.reg] & op_0.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
+    }
+    else if (insn.id == M68K_INS_EXT)
+    {
+        int op_0_value = ((reg_states[op_0.reg] & 0x80) ? 0xFF00 : 0) | reg_states[op_0.reg];
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
+    }
+    else if (insn.id == M68K_INS_LEA)
     {
         int value = insn.address + insn.detail->m68k.operands[0].mem.disp + 2;
         reg_states[op_1.reg] = value;
 
         sprintf(comment, "%s = %02X", reg_to_string(reg_string, op_1.reg), value);
+    }
+    else if (insn.id == M68K_INS_LSL)
+    {
+        // lsl.w #$8, d0
+        int mask = pow(2, instr_size * 8) - 1;
+        int value = reg_states[op_1.reg] << op_0.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), value);
     }
     else if (insn.id == M68K_INS_MOVEM)
     {
@@ -652,7 +707,7 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], r
                 line[0] = 0;
                 if (op_1.register_bits & (1 << n))
                 {
-                    const unsigned char *code = read_rom(instr_size, reg_states[op_0.reg]);
+                    const unsigned char *code = read_memory(instr_size, reg_states[op_0.reg]);
                     reg_states[op_0.reg] += instr_size;
 
                     int value = (code[0] << 8) + code[1];
@@ -680,7 +735,7 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], r
             }
         }
     }
-    else if (insn.id == M68K_INS_MOVE)
+    else if (insn.id == M68K_INS_MOVE || insn.id == M68K_INS_MOVEA)
     {
         char op_values[2][20];
         for (size_t i = 0; i < 2; i++)
@@ -690,36 +745,60 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], r
             {
             case M68K_AM_REGI_ADDR_DISP:
             {
-                int op_value = reg_states[op.mem.base_reg] + op.mem.disp;
-                sprintf(op_values[i], "(%04X)", op_value);
+                // handles movea.w 2(a0), a3 - we want to get the value pointed by a0
+                if (i == 0)
+                {
+                    int reg_value = reg_states[op.mem.base_reg] + op.mem.disp;
+                    const unsigned char *code = read_memory(instr_size, reg_value);
+                    sprintf(op_values[i], "%X", (code[0] << 8) + code[1]);
+                }
+                else
+                {
+                    int op_value = reg_states[op.mem.base_reg] + op.mem.disp;
+                    sprintf(op_values[i], "(%04X)", op_value);
+                }
                 break;
             }
             case M68K_AM_IMMEDIATE:
                 sprintf(op_values[i], "%X", op.imm);
                 break;
             case M68K_AM_REGI_ADDR:
-                sprintf(op_values[i], "(%04X)", reg_states[op.reg]);
-                break;
             case M68K_AM_REGI_ADDR_POST_INC:
             {
-                const unsigned char *code = read_rom(instr_size, reg_states[op.reg]);
-                reg_states[op.reg] += instr_size;
-
-                int op_value = code[0];
-                reg_states[op_1.reg] &= 0xFFFFFF00;
-                reg_states[op_1.reg] |= op_value;
-                sprintf(op_values[i], "%04X", reg_states[op_1.reg]);
+                if (i == 0)
+                {
+                    // handles move.b (a0)+, d0 - we want to get the value pointed by a0
+                    int value = read_value(reg_states[op_0.reg], instr_size, read_memory);
+                    sprintf(op_values[i], "%X", value);
+                }
+                else
+                {
+                    // handles move.l d0, (a0)+ - we want to get value of a0
+                    sprintf(op_values[i], "%X", reg_states[op_1.reg]);
+                }
                 break;
             }
+            case M68K_AM_REG_DIRECT_ADDR:
+                sprintf(op_values[i], "%s", reg_to_string(reg_string, op.reg));
+                break;
             case M68K_AM_REG_DIRECT_DATA:
-                if (i == 0) {
+                if (i == 0)
+                {
                     // handles move.l d0, (a0) - we want to get the value of d0
                     sprintf(op_values[i], "%04X", reg_states[op.reg]);
-                } else {
+                }
+                else
+                {
                     // handles move.l (a0), d0 - we don't care about the value of d0
                     sprintf(op_values[i], "%s", reg_to_string(reg_string, op.reg));
                 }
                 break;
+            case M68K_AM_ABSOLUTE_DATA_SHORT:
+            {
+                const unsigned char *code = read_memory(instr_size, 0xFFFF0000 | op.imm);
+                sprintf(op_values[i], "%04X", (code[0] << 8) + code[1]);
+                break;
+            }
             default:
                 break;
             }
@@ -734,15 +813,44 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[16], r
         int op_0_value = op_0.imm;
         sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_0_value);
     }
-    else if (insn.id == M68K_INS_MOVEA)
+    else if (insn.id == M68K_INS_NEG)
     {
-        int op_0_value = reg_states[op_0.reg];
-        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_0_value);
+        int pw = pow(2, instr_size * 8) - 1;
+        int op_0_value = -reg_states[op_0.reg] & pw;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
     }
-    else if (insn.id == M68K_INS_ADD)
+    else if (insn.id == M68K_INS_ORI)
     {
-        int op_0_value = reg_states[op_0.reg] + reg_states[op_1.reg];
-        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_0_value);
+        int op_0_value = reg_states[op_0.reg] | op_1.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
+    }
+    else if (insn.id == M68K_INS_SUB)
+    {
+        int pw = pow(2, instr_size * 8) - 1;
+        int op_1_value = (reg_states[op_1.reg] - reg_states[op_0.reg]) & pw;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
+    }
+    else if (insn.id == M68K_INS_SUBI)
+    {
+        int op_0_value = reg_states[op_0.reg] - op_1.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
+    }
+    else if (insn.id == M68K_INS_SUBQ)
+    {
+        int op_1_value = reg_states[op_1.reg] - op_0.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
+    }
+    else if (insn.id == M68K_INS_TST)
+    {
+        // Handles tst.x 0xA100000 - register access
+        // Handles tst.x 0xFE00 - RAM access
+        unsigned char *data = read_memory(instr_size, op_0.imm <= 0xFFFF ? op_0.imm + 0xFFFF0000 : op_0.imm);
+        int value = data[0];
+        if (instr_size == 2)
+            value = (data[0] << 8) + data[1];
+        if (instr_size == 4)
+            value = (data[0] << 24) + (data[1] << 16) + (data[2] << 8) + data[3];
+        sprintf(comment, "%X", value);
     }
 }
 
@@ -766,7 +874,7 @@ void simulate_function(struct Function f, rom_reader read_rom)
 }
 
 // Returns results of executing instruction at address - used to show helpful hints on the assembly line
-void simulate_instruction(uint32_t address, uint32_t dar[16], char *comment, rom_reader read_rom)
+void simulate_instruction(uint32_t address, uint32_t dar[16], char *comment, rom_reader read_memory)
 {
     if (handle == 0)
     {
@@ -779,16 +887,16 @@ void simulate_instruction(uint32_t address, uint32_t dar[16], char *comment, rom
 
     cs_insn *insns;
     size_t length = 10;
-    unsigned char *code = read_rom(length, address);
+    unsigned char *code = read_memory(length, address);
     int count = cs_disasm(handle, code, length, address, 1, &insns);
     if (count > 0)
     {
         cs_insn insn = insns[0];
         // Copy DAR to reg_states as analyze_instruction can modify it
-        uint32_t reg_states[16];
+        uint32_t reg_states[17];
         memset(reg_states, 0, sizeof(reg_states));
-        memcpy(reg_states + 1, dar, sizeof(uint32_t) * 15);
-        analyze_instruction(insn, comment, reg_states, read_rom);
+        memcpy(reg_states + 1, dar, sizeof(uint32_t) * 16);
+        analyze_instruction(insn, comment, reg_states, read_memory);
 
         cs_free(insns, count);
     }

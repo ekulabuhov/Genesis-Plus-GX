@@ -62,7 +62,7 @@ export const FunctionListComponent = {
     onNameSearchChange() {
       this.filteredFuncs = this.nameSearch
         ? this.funcs.filter(
-            (func) => func.name && func.name.indexOf(this.nameSearch) !== -1
+            (func) => func.name && func.name.toLowerCase().indexOf(this.nameSearch.toLowerCase()) !== -1
           )
         : this.funcs;
     }

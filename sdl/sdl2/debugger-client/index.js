@@ -165,7 +165,7 @@ document.onkeydown = function (e) {
     WsService.asmViewer.showAsm(response);
   }
 
-  if (e.key === 'ArrowLeft' && e.metaKey && e.target.nodeName !== 'INPUT') {
+  if (e.key === '-' && e.ctrlKey && e.target.nodeName !== 'INPUT') {
     e.preventDefault();
     WsService.asmViewer.goBack();
   }

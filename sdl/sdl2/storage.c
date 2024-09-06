@@ -84,85 +84,121 @@ struct SqlResult run_sql(const char *sql, ...)
     return r;
 }
 
-struct SqlResult get_instructions(uint32_t index, uint32_t address, int as_json, size_t length_around)
+struct SqlResult get_instructions(uint32_t *index, uint32_t address, int as_json, size_t length_around, char **errMsg)
 {
     const char *json_select = "SELECT json_group_array (json_object('address', address, 'mnemonic', mnemonic, 'op_str', ifnull(name, op_str), 'op_1', op_1, 'comment', COMMENT, 'type', type))";
     const char *sql_select = "SELECT address, mnemonic, ifnull(name,op_str) as op_str, op_1, comment";
 
-    const char *body = "FROM (\
-	SELECT\
-		row_number() OVER (ORDER BY t.address) AS rowNum,\
-		*\
-	FROM (\
-    WITH RECURSIVE split(address, comment, str) AS (\
-        SELECT address, '', comment FROM instruction_comments\
-        UNION ALL SELECT\
-        address,\
-        substr(str, instr(str, X'0A')+1, instr(str, X'0A')),\
-        substr(str, instr(str, X'0A')+1)\
-        FROM split WHERE str!='' and instr(str, X'0A') > 0\
-    )\
-    SELECT\
-		0 AS id,\
-		start_address AS address,\
-		'FUN_' || printf ('%08X',\
-		start_address) AS mnemonic,\
-	    '' AS op_str,\
-	    0 AS size,\
-	    '' AS op_1,\
-        'label' as type,\
-        '' as comment \
-    FROM \
-	    functions\
-    UNION ALL\
-	SELECT\
-		i.id,\
-		i.address,\
-		mnemonic,\
-		op_str,\
-		size,\
-		op_1,\
-        '' as type,\
-        ic.comment\
-        -- substr(ic.comment, 0, instr(ic.comment, X'0A')) as comment\n\
-	FROM\
-		instructions i\
-        LEFT JOIN instruction_comments ic ON ic.address = i.address\
-    UNION ALL\
-    SELECT\
-        0 AS id,\
-	    address,\
-	    NULL as mnemonic,\
-	    '' AS op_str,\
-	    0 AS size,\
-	    '' AS op_1,\
-	    'comment' as type,\
-	    comment\
-    FROM split\
-    WHERE comment!='') t\
-	LEFT JOIN labels l ON t.op_1 = l.address) x";
+    const char *body = "FROM (\n\
+    SELECT\n\
+        row_number() OVER (ORDER BY t.address) AS rowNum,\n\
+        *\n\
+    FROM (\n\
+\n\
+    -- Split is a recursive function that splits multiline comments into rows\n\
+    WITH RECURSIVE split(address, comment, str) AS (\n\
+        SELECT address, '', comment FROM instruction_comments\n\
+        UNION ALL SELECT\n\
+        address,\n\
+        substr(str, instr(str, X'0A')+1, instr(str, X'0A')),\n\
+        substr(str, instr(str, X'0A')+1)\n\
+        FROM split WHERE str!='' and instr(str, X'0A') > 0\n\
+    )\n\
+\n\
+    -- Selects all function labels\n\
+    SELECT\n\
+        0 AS id,\n\
+        start_address AS address,\n\
+        ifnull(l.name, 'FUN_' || printf ('%08X', start_address)) AS mnemonic,\n\
+        '' AS op_str,\n\
+        0 AS size,\n\
+        '' AS op_1,\n\
+        'label' as type,\n\
+        '' as comment \n\
+    FROM functions f\n\
+        LEFT JOIN labels l ON printf('%X', f.start_address) = l.address\n\
+    UNION ALL\n\
+\n\
+    -- Selects all local branch labels\n\
+    SELECT \n\
+        0 AS id, \n\
+        jt.function_start_address as 'address', \n\
+        ifnull(l.name, 'LAB_' || printf ('%08X', jt.function_start_address)) AS mnemonic,\n\
+        0 AS size,\n\
+        '' AS op_1,\n\
+        name, \n\
+        'label' AS type,\n\
+        '' AS comment\n\
+    FROM jump_tables jt\n\
+        LEFT JOIN labels l ON printf('%X', jt.function_start_address) = l.address\n\
+        LEFT JOIN functions f ON f.start_address = jt.function_start_address\n\
+        WHERE jt.type = 'local_branch'\n\
+        -- Exclude local branch labels that are also function labels\n\
+        AND f.id IS NULL\n\
+    GROUP BY jt.function_start_address\n\
+    UNION ALL\n\
+\n\
+    -- Selects all instructions\n\
+    SELECT\n\
+        i.id,\n\
+        i.address,\n\
+        mnemonic,\n\
+        op_str,\n\
+        size,\n\
+        op_1,\n\
+        '' as type,\n\
+        ic.comment\n\
+    FROM\n\
+        instructions i\n\
+        LEFT JOIN instruction_comments ic ON ic.address = i.address\n\
+    UNION ALL\n\
+\n\
+    -- Selects all multiline comments\n\
+    SELECT\n\
+        0 AS id,\n\
+        address,\n\
+        NULL as mnemonic,\n\
+        '' AS op_str,\n\
+        0 AS size,\n\
+        '' AS op_1,\n\
+        'comment' as type,\n\
+        comment\n\
+    FROM split\n\
+    WHERE comment!='') t\n\
+    LEFT JOIN labels l ON replace(replace(replace(upper(t.op_str), '$', ''), '.L', ''), '(PC)', '') = l.address) x\n";
 
     if (address)
     {
         struct SqlResult rowNum = run_sql("SELECT rowNum %s WHERE address = 0x%X and type = ''", body, address);
-        index = atoi(rowNum.aResult[1]);
+        if (rowNum.nRow == 0)
+        {
+            *errMsg = "Address not found";
+            return rowNum;
+        }
+        *index = atoi(rowNum.aResult[1]);
         sqlite3_free_table(rowNum.aResult);
     }
 
     return run_sql("%s %s WHERE\
-	x.rowNum >= %d - %d\
-	AND x.rowNum <= %d + %d", as_json ? json_select : sql_select, body, index, length_around, index, length_around);
+    x.rowNum >= %d - %d\
+    AND x.rowNum <= %d + %d", as_json ? json_select : sql_select, body, *index, length_around, *index, length_around);
 }
 
-void disasm_as_json(uint32_t index, uint32_t address, size_t length, char **message)
+int disasm_as_json(uint32_t index, uint32_t address, size_t length, char **jsonOut)
 {
     struct SqlResult count = run_sql("select count(*) from instructions");
 
-    struct SqlResult result = get_instructions(index, address, 1, 100);
+    char *errMsg = (char*)-1;
+    struct SqlResult result = get_instructions(&index, address, 1, 100, &errMsg);
+    if (errMsg != (char*)-1) {
+        *jsonOut = malloc(strlen(errMsg) + 100);
+        sprintf(*jsonOut, "{ \"type\": \"asm\", \"error\": \"%s\" }", errMsg);
+        return STORAGE_INSTRUCTION_MISSING;
+    }
 
-    *message = malloc(strlen(result.aResult[1]) + 100);
+    *jsonOut = malloc(strlen(result.aResult[1]) + 100);
 
-    sprintf(*message, "{ \"type\": \"asm\", \"index\": %u, \"count\": %s, \"data\": %s }", index >= 100 ? index - 100 : 0, count.aResult[1], result.aResult[1]);
+    sprintf(*jsonOut, "{ \"type\": \"asm\", \"index\": %u, \"count\": %s, \"data\": %s }", index >= 100 ? index - 100 : 0, count.aResult[1], result.aResult[1]);
 
     sqlite3_free_table(result.aResult);
     sqlite3_free_table(count.aResult);
@@ -210,25 +246,44 @@ char *funcs(void)
 {
     struct SqlResult result = run_sql("SELECT json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs))) from \
     (SELECT \
-        f.*, \
-        NULLIF(json_group_array (json_object('address', printf ('%%X', jt.instruction_address), 'func', ref_label.name, 'func_address', ref_f.start_address)), '[{\"address\":\"0\",\"func\":null,\"func_address\":null}]') AS refs, \
-        l.name \
-    from functions f \
+    f.*, \
+    NULLIF(json_group_array (( \
+            -- Find a function that surrounds referenced instruction \n\
+            SELECT \
+                json_object('address', printf ('%%X', jt.instruction_address), 'func_address', printf ('%%X', start_address), 'func', ref_label.name) \
+                FROM functions ref_f \
+            -- Get a label for referenced function \n\
+            LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \
+        WHERE \
+            jt.instruction_address BETWEEN start_address \
+            AND end_address \
+        ORDER BY \
+            start_address DESC \
+        LIMIT 1)), '[null]') AS refs, \
+    l.name \
+FROM \
+    functions f \
     LEFT JOIN jump_tables jt ON jt.function_start_address = f.start_address \
-    LEFT JOIN labels l ON l.address = printf ('%%X', f.start_address) \n\
-    -- Find a function that surrounds referenced instruction \n\
-    LEFT JOIN functions ref_f ON jt.instruction_address BETWEEN ref_f.start_address \
-		AND ref_f.end_address \n\
-    -- Get a label for referenced function \n\
-    LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \
-    GROUP BY f.start_address \
-    ORDER BY f.start_address) t");
+    LEFT JOIN labels l ON l.address = printf ('%%X', \
+        f.start_address) \
+GROUP BY \
+    f.start_address \
+ORDER BY \
+    f.start_address) t");
+
     return result.aResult[1];
 }
 
 void create_label(uint32_t address, char *name)
 {
-    run_sql("INSERT OR REPLACE INTO labels (address, name) VALUES ('%X', '%s')", address, name);
+    if (name == NULL) 
+    {
+        run_sql("DELETE FROM labels WHERE address = '%X'", address);
+    } 
+    else 
+    {
+        run_sql("INSERT OR REPLACE INTO labels (address, name) VALUES ('%X', '%s')", address, name);
+    }
 }
 
 void create_system_label(uint32_t address, char *name)
@@ -244,6 +299,6 @@ struct SqlResult add_comment(uint32_t address, char *comment)
     }
     else
     {
-        return run_sql("INSERT INTO instruction_comments (address, comment) VALUES ('%d', '%s')", address, comment);
+        return run_sql("INSERT OR REPLACE INTO instruction_comments (address, comment) VALUES ('%d', '%s')", address, comment);
     }
 }

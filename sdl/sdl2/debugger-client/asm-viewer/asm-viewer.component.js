@@ -315,12 +315,18 @@ export class AsmViewerController {
       {
         label: `Rename ${label}`,
         click: () => {
-          const newName = prompt(`Rename ${label} to:`, label);
-          if (newName) {
+          let newName = prompt(`Rename ${label} to:`, label);
+          // null is returned when Cancel is clicked
+          if (newName !== null) {
             WsService.send(`fn name 0x${pa.op_1} ${newName}`);
-            this.funcs.find(
+
+            const foundFunc = this.funcs.find(
               (func) => func.start_address === parseInt(pa.op_1, 16)
-            ).name = newName;
+            );
+            if (foundFunc) {
+              foundFunc.name = newName;
+            }
+
             pa.op_str = newName;
           }
         },
@@ -337,11 +343,26 @@ export class AsmViewerController {
       {
         label: `Rename ${pa.mnemonic}`,
         click: () => {
-          const newName = prompt(`Rename ${pa.mnemonic} to:`, pa.mnemonic);
-          if (newName) {
+          let newName = prompt(`Rename ${pa.mnemonic} to:`, pa.mnemonic);
+          // null is returned when Cancel is clicked
+          if (newName !== null) {
             WsService.send(`fn name 0x${pa.address.toString(16)} ${newName}`);
-            this.funcs.find((func) => func.start_address === pa.address).name =
-              newName;
+
+            const foundFunc = this.funcs.find(
+              (func) => func.start_address === pa.address
+            );
+
+            // Handles a case of generating a function name if empty value is provided
+            newName =
+              newName ||
+              // If function is not found - it must be a label
+              (foundFunc ? "FUN_" : "LAB_") +
+                pa.address.toString(16).toUpperCase().padStart(8, "0");
+
+            if (foundFunc) {
+              foundFunc.name = newName;
+            }
+
             pa.mnemonic = newName;
           }
         },

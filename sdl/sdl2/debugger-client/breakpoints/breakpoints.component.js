@@ -1,15 +1,8 @@
-/** @typedef {Partial<{
- * edit: boolean;
- * execute: boolean;
- * read: boolean;
- * write: boolean;
- * address: string;
- * enabled: boolean;
- * type: 'rom' | 'vram' | 'cram' | 'ram';
- * value_equal: string;
- * }>} Breakpoint */
-
 import { WsService } from "../ws.service.js";
+
+/**
+ * @typedef {import("./breakpoints.service.js").Breakpoint & { edit: boolean }} Breakpoint
+ */
 
 /** @type {Breakpoint} */
 const defaultBreakpoint = { edit: true, enabled: true, type: "rom" };

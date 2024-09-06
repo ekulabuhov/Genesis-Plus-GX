@@ -18,6 +18,13 @@ export function toHex(val, size) {
   return "$" + val.toString(16).toUpperCase().slice(slice);
 }
 
+/**
+ * @param {number} val
+ */
+export function to0xHex(val) {
+  return "0x" + val.toString(16).toUpperCase();
+}
+
 export async function getRgbPalettesFromCram() {
   const { data: cram } = await WsService.showMemoryLocation(0, 128, "cram");
   /** @type {{red: number, green: number, blue: number}[][]} */

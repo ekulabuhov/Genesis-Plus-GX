@@ -12,6 +12,12 @@
 #include "storage.h"
 // To unpause emu
 #include "main.h"
+
+// Imports:
+// read_memory()
+// read_memory_byte()
+// write_memory_byte()
+// set_debug_hook()
 #include "debug.h"
 
 // To access system_reset()
@@ -133,7 +139,12 @@ void onmessage(ws_cli_conn_t *client,
 		uint32_t address = read_number_token();
 		uint32_t index = read_number_token();
 		uint16_t size = atoi(strtok(NULL, " "));
-		disasm_as_json(index, address, size, &message);
+		int rc = disasm_as_json(index, address, size, &message);
+		if (rc == STORAGE_INSTRUCTION_MISSING)
+		{
+			extract_functions(0, address, read_memory);
+			disasm_as_json(index, address, size, &message);
+		}
 	}
 
 	if (strcmp((const char *)msg, "step") == 0)
@@ -294,7 +305,10 @@ char *regs_as_json()
 					 "\"sp\": %d, "
 					 "\"sr\": %d, "
 					 "\"prev_pc\": %d, "
-					 "\"comment\": \"%s\""
+					 "\"comment\": \"%s\", "
+					 "\"ntab\": %d, "	/* Name table A base address */
+					 "\"ntbb\": %d, "	/* Name table B base address */
+					 "\"satb\": %d "	/* Sprite attribute table base address */
 					 "}}",
 			m68k.pc,
 			m68k.dar[0],
@@ -316,7 +330,10 @@ char *regs_as_json()
 			m68k.dar[15],
 			m68k_get_reg(M68K_REG_SR),
 			m68k.prev_pc,
-			comment);
+			comment,
+			ntab,
+			ntbb,
+			satb);
 
 	return message;
 }

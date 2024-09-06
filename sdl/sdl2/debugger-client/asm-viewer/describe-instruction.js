@@ -140,6 +140,12 @@ C-Always cleared.
 The immediate data field is logically ANDed with the
 destination operand. The result is stored in the destination
 location.`,
+      ext: `Extends a byte in a data register to a word or a long word, or a word in a data
+register to a long word, by replicating the sign bit to the left. If the operation extends a
+byte to a word, bit 7 of the designated data register is copied to bits 15 – 8 of that data
+register. If the operation extends a word to a long word, bit 15 of the designated data
+register is copied to bits 31 – 16 of the data register. The EXTB form copies bit 7 of the
+designated register to bits 31 – 8 of the data register.`,
       lea: `LEA-Load Effective Address
 Syntax: LEA <ea>,An
 Size: Long
@@ -227,6 +233,17 @@ The register list is specified by giving lists of register
 names separated by slashes. A range of registers can be
 specified by giving two register names separated by a
 hyphen. `,
+      neg: `NEG-Negate
+Syntax: NEG < ea >
+Size: Byte, Word or Long
+
+Subtracts the destination operand from zero and stores the result in the
+destination location. The size of the operation is specified as byte, word, or long.`,
+      rst: `RTS-Return from Subroutine
+Operation: (SP) → PC; SP + 4 → SP 
+
+Pulls the program counter value from the stack. The previous program counter
+value is lost. `,
       tst: `TST-Test an Operand
 Syntax: TST <ea>
 Size: Byte, Word or Long
