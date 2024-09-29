@@ -86,25 +86,45 @@ struct SqlResult run_sql(const char *sql, ...)
 
 struct SqlResult get_instructions(uint32_t *index, uint32_t address, int as_json, size_t length_around, char **errMsg)
 {
-    const char *json_select = "SELECT json_group_array (json_object('address', address, 'mnemonic', mnemonic, 'op_str', ifnull(name, op_str), 'op_1', op_1, 'comment', COMMENT, 'type', type))";
+    // name is a label.name
+    const char *json_select = "SELECT json_group_array (json_object('address', address, 'mnemonic', mnemonic, 'op_str', ifnull(op_1_label_name, op_str), 'op_1', ifnull(op_1_label_address, op_1), 'comment', COMMENT, 'type', type))";
     const char *sql_select = "SELECT address, mnemonic, ifnull(name,op_str) as op_str, op_1, comment";
 
     const char *body = "FROM (\n\
     SELECT\n\
         row_number() OVER (ORDER BY t.address) AS rowNum,\n\
+        l.name AS op_1_label_name,\n\
+        l.address AS op_1_label_address,\n\
         *\n\
     FROM (\n\
 \n\
     -- Split is a recursive function that splits multiline comments into rows\n\
-    WITH RECURSIVE split(address, comment, str) AS (\n\
-        SELECT address, '', comment FROM instruction_comments\n\
-        UNION ALL SELECT\n\
-        address,\n\
-        substr(str, instr(str, X'0A')+1, instr(str, X'0A')),\n\
-        substr(str, instr(str, X'0A')+1)\n\
+    WITH RECURSIVE split(address, comment, str, type, lineIdx) AS (\n\
+        SELECT address, '', comment || X'0A', 'function_comment' as type, -1 as lineIdx FROM function_comments\n\
+    	UNION ALL\n\
+        SELECT address, '', comment || X'0A', 'instruction_comment' as type, -1 as lineIdx FROM instruction_comments\n\
+        UNION ALL\n\
+        SELECT address,\n\
+        substr(str, 1, instr(str, X'0A')-1),\n\
+        substr(str, instr(str, X'0A')+1),\n\
+        type,\n\
+        lineIdx + 1\n\
         FROM split WHERE str!='' and instr(str, X'0A') > 0\n\
     )\n\
 \n\
+    -- Selects function comments\n\
+    SELECT\n\
+        0 AS id,\n\
+        address,\n\
+        NULL as mnemonic,\n\
+        '' AS op_str,\n\
+        0 AS size,\n\
+        '' AS op_1,\n\
+        'function_comment' as type,\n\
+        comment\n\
+    FROM split\n\
+    WHERE type = 'function_comment'\n\
+    UNION ALL\n\
     -- Selects all function labels\n\
     SELECT\n\
         0 AS id,\n\
@@ -153,7 +173,7 @@ struct SqlResult get_instructions(uint32_t *index, uint32_t address, int as_json
         LEFT JOIN instruction_comments ic ON ic.address = i.address\n\
     UNION ALL\n\
 \n\
-    -- Selects all multiline comments\n\
+    -- Selects all multiline instruction comments, skips first line as it's on the same line as instruction \n\
     SELECT\n\
         0 AS id,\n\
         address,\n\
@@ -164,7 +184,7 @@ struct SqlResult get_instructions(uint32_t *index, uint32_t address, int as_json
         'comment' as type,\n\
         comment\n\
     FROM split\n\
-    WHERE comment!='') t\n\
+    WHERE type = 'instruction_comment' AND lineIdx > 0) t\n\
     LEFT JOIN labels l ON replace(replace(replace(upper(t.op_str), '$', ''), '.L', ''), '(PC)', '') = l.address) x\n";
 
     if (address)
@@ -244,31 +264,32 @@ struct fam *get_functions(void)
 
 char *funcs(void)
 {
-    struct SqlResult result = run_sql("SELECT json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs))) from \
-    (SELECT \
-    f.*, \
-    NULLIF(json_group_array (( \
+    struct SqlResult result = run_sql("SELECT json_group_array(json_object('start_address', start_address, 'end_address', end_address, 'name', t.name, 'references', json(t.refs), 'comment', t.comment)) from \n\
+    (SELECT \n\
+    f.*, \n\
+    NULLIF(json_group_array (( \n\
             -- Find a function that surrounds referenced instruction \n\
-            SELECT \
-                json_object('address', printf ('%%X', jt.instruction_address), 'func_address', printf ('%%X', start_address), 'func', ref_label.name) \
-                FROM functions ref_f \
+            SELECT \n\
+                json_object('address', printf ('%%X', jt.instruction_address), 'func_address', printf ('%%X', start_address), 'func', ref_label.name) \n\
+                FROM functions ref_f \n\
             -- Get a label for referenced function \n\
-            LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \
-        WHERE \
-            jt.instruction_address BETWEEN start_address \
-            AND end_address \
-        ORDER BY \
-            start_address DESC \
-        LIMIT 1)), '[null]') AS refs, \
-    l.name \
-FROM \
-    functions f \
-    LEFT JOIN jump_tables jt ON jt.function_start_address = f.start_address \
-    LEFT JOIN labels l ON l.address = printf ('%%X', \
-        f.start_address) \
-GROUP BY \
-    f.start_address \
-ORDER BY \
+            LEFT JOIN labels ref_label ON ref_label.address = printf ('%%X', ref_f.start_address) \n\
+        WHERE \n\
+            jt.instruction_address BETWEEN start_address \n\
+            AND end_address \n\
+        ORDER BY \n\
+            start_address DESC \n\
+        LIMIT 1)), '[null]') AS refs, \n\
+    l.name, \n\
+    fc.comment \n\
+FROM \n\
+    functions f \n\
+    LEFT JOIN jump_tables jt ON jt.function_start_address = f.start_address \n\
+    LEFT JOIN labels l ON l.address = printf ('%%X', f.start_address) \n\
+    LEFT JOIN function_comments fc ON fc.address = f.start_address \n\
+GROUP BY \n\
+    f.start_address \n\
+ORDER BY \n\
     f.start_address) t");
 
     return result.aResult[1];
@@ -300,5 +321,17 @@ struct SqlResult add_comment(uint32_t address, char *comment)
     else
     {
         return run_sql("INSERT OR REPLACE INTO instruction_comments (address, comment) VALUES ('%d', '%s')", address, comment);
+    }
+}
+
+struct SqlResult add_function_comment(uint32_t address, char *comment)
+{
+    if (comment == NULL)
+    {
+        return run_sql("DELETE FROM function_comments WHERE address = '%d'", address);
+    }
+    else
+    {
+        return run_sql("INSERT OR REPLACE INTO function_comments (address, comment) VALUES ('%d', '%s')", address, comment);
     }
 }

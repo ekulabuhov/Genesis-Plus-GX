@@ -159,7 +159,8 @@ export const RegisterViewerComponent = {
           click: () => {
             let type = "rom";
             let regVal = this.regs[reg.toLowerCase()];
-            regVal = regVal < 0 ? 0x1000000 + regVal : regVal;
+            // Truncate to 24 bit
+            regVal = regVal & 0xffffff;
             if (regVal <= 0x3fffff) {
               type = "rom";
             } else if (regVal >= 0xff0000 && regVal <= 0xffffff) {

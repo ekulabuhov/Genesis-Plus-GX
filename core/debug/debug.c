@@ -22,14 +22,20 @@
 #include "../../sdl/sdl2/storage.h"
 #include "../../sdl/sdl2/rom_analyzer.h"
 
+#include "../../sdl/sdl2/dwarf.h"
+
 // If set will execute one instruction and pause
 int dbg_trace;
 // If set will prevent instruction from executing and jump to main SDL loop
 int dbg_paused;
 // If set we are in the middle of the interrupt
 int dbg_in_interrupt;
+// If set will skip single breakpoint check
+int dbg_continue_after_bp;
 // Callback that is executed each time debug event happens (e.g. step)
-void (*debug_hook)(dbg_event_t type, void *data) = NULL;
+typedef void (*debug_hook_t)(dbg_event_t type, void *data);
+debug_hook_t debug_hooks[5];
+int debug_hook_count = 0;
 
 static breakpoint_t *first_bp = NULL;
 
@@ -87,6 +93,18 @@ static void delete_breakpoint(breakpoint_t *bp)
     free(bp);
 }
 
+void delete_breakpoint_with_address(unsigned int address)
+{
+    breakpoint_t *bp;
+    for (bp = first_bp; bp; bp = next_breakpoint(bp))
+    {
+        if (bp->address == address) {
+            delete_breakpoint(bp);
+            break;
+        }
+    }
+}
+
 void clear_bpt_list()
 {
     while (first_bp != NULL)
@@ -108,6 +126,15 @@ void read_string(char *str, unsigned int address)
         {
             break;
         }
+    }
+}
+
+// Send a notification of debug event to all subscribers
+void debug_hook(dbg_event_t type, void *data)
+{
+    for (size_t i = 0; i < debug_hook_count; i++)
+    {
+        debug_hooks[i](type, data);
     }
 }
 
@@ -160,6 +187,11 @@ void check_breakpoint(hook_type_t type, int width, unsigned int address, unsigne
         {
             printf("breakpoint hit at addr: 0x%X, type: %u, width: %d, value: 0x%X\n", address, type, width, value);
             dbg_paused = 1;
+
+            if (bp->once)
+            {
+                delete_breakpoint(bp);
+            }
             break;
         }
     }
@@ -171,7 +203,6 @@ static struct timespec start, end;
 static char *ym2612_buf;
 static int send_next = 0;
 const char *template = "{ \"type\": \"ym2612\", \"data\": [";
-static uint prev_pc = 0;
 
 void process_breakpoints(hook_type_t type, int width, unsigned int address, unsigned int value)
 {
@@ -203,11 +234,22 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
         }
 
         {
-            unsigned short opc = m68k_read_immediate_16(prev_pc);
+            unsigned short opc = m68k_read_immediate_16(m68k.prev_pc);
             int is_jsr = (opc >> 6) == 314;
             int is_jmp = (opc >> 6) == 315;
             if (is_jsr || is_jmp)
             {
+                if (is_jsr && dbg_step_over)
+                {
+                    // Read return address from stack
+                    unsigned int return_to = m68k_read_immediate_32(m68k.dar[M68K_REG_A7]);
+                    breakpoint_t *bpt = add_bpt(HOOK_M68K_E, return_to, 1, 0, 0);
+                    bpt->once = 1;
+                    dbg_step_over = 0;
+                    dbg_trace = 0;
+                    dbg_paused = 0;
+                }
+
                 int function_found = 0;
                 for (size_t i = 0; i < extracted_functions->len; i++)
                 {
@@ -220,26 +262,39 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
 
                 if (!function_found)
                 {
-                    printf("new function %04X, sent by %04X from %04X\n", m68k.pc, opc, prev_pc);
+                    printf("new function %04X, sent by %04X from %04X\n", m68k.pc, opc, m68k.prev_pc);
                     fam_append(extracted_functions, m68k.pc);
-                    extract_functions(prev_pc, m68k.pc, read_memory);
+                    extract_functions(m68k.prev_pc, m68k.pc, read_memory);
                 }
             }
         }
 
-        if (!dbg_trace)
+        if (!dbg_trace && !dbg_continue_after_bp)
         {
             // Will set dbg_paused if hit
             check_breakpoint(type, width, address, value);
         }
 
+        if (dbg_step_over_line)
+        {
+            dwarf_ask_t *dwarf_info = dwarf_ask(m68k.pc);
+            if (dwarf_info->line_number != dbg_step_over_line)
+            {
+                dbg_paused = 1;
+                dbg_step_over_line = 0;
+            }
+        }
+
         if (dbg_paused)
         {
+            dbg_continue_after_bp = 1;
             dbg_paused = 0;
             debug_hook(DBG_STEP, NULL);
             // Jump to main SDL loop
             longjmp(jmp_env, 1);
         }
+
+        dbg_continue_after_bp = 0;
 
         if (dbg_trace)
         {
@@ -247,8 +302,6 @@ void process_breakpoints(hook_type_t type, int width, unsigned int address, unsi
             dbg_paused = 1;
             break;
         }
-
-        prev_pc = m68k.pc;
 
         break;
     default:
@@ -303,7 +356,7 @@ void visualize_ym2612(unsigned int address, unsigned int value)
 
 void set_debug_hook(void (*hook)(dbg_event_t type, void *data))
 {
-    debug_hook = hook;
+    debug_hooks[debug_hook_count++] = hook;
 }
 
 static unsigned char read_cram_byte(unsigned char *array, unsigned int addr)
@@ -333,11 +386,17 @@ unsigned char read_memory_byte(unsigned int address, char *type)
     return m68ki_read_8(address);
 }
 
-void write_memory_byte(unsigned int address, unsigned int value)
+void write_memory_byte(unsigned int address, unsigned int value, char *memtype)
 {
+    if (memtype && strcmp(memtype, "vram") == 0) {
+        vram[address] = value;
+        return;
+    }
+
     if (address >= 0xA04000 && address <= 0xA04003)
     {
         z80_memory_w(address - 0xA00000, value);
+        return;
     }
 
     // We can't use m68ki_write_8 as it won't allow us to write to regions where CPU is not allowed to write (e.g. ROM)

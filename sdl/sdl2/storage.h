@@ -24,6 +24,7 @@ void create_label(uint32_t address, char *name);
 void create_system_label(uint32_t address, char *name);
 struct SqlResult add_comment(uint32_t address, char *comment);
 struct SqlResult get_instructions(uint32_t *index, uint32_t address, int as_json, size_t length_around, char **errMsg);
+struct SqlResult add_function_comment(uint32_t address, char *comment);
 
 struct SqlResult run_sql(const char *sql, ...);
 

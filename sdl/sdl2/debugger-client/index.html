@@ -61,8 +61,15 @@
               />
               <input
                 type="button"
-                value="Step"
+                value="Step Over"
                 title="F10"
+                onclick="ws.send('step_over')"
+                ng-disabled="$ctrl.isRunning"
+              />
+              <input
+                type="button"
+                value="Step Into"
+                title="F11"
                 onclick="ws.send('step')"
                 ng-disabled="$ctrl.isRunning"
               />
@@ -111,9 +118,7 @@
 
         <asm-viewer
           regs="$ctrl.regs"
-          asm="$ctrl.asm"
           show-bytes="$ctrl.showByteCode"
-          total-instruction-count="$ctrl.totalInstructionCount"
         ></asm-viewer>
       </div>
       <div class="col h-100 d-flex flex-column">
@@ -142,13 +147,29 @@
             <function-list></function-list>
           </my-pane>
           <my-pane title="Plane A">
-            <plane-viewer plane="'a'" class="d-block h-100"></plane-viewer>
+            <plane-viewer
+              base="$ctrl.regs.ntab"
+              width="$ctrl.regs.plane_w"
+              height="$ctrl.regs.plane_h"
+              on-view-memory="$ctrl.viewMemory(address, type)"
+              class="d-block h-100"
+            ></plane-viewer>
           </my-pane>
           <my-pane title="Plane B">
-            <plane-viewer plane="'b'" class="d-block h-100"></plane-viewer>
+            <plane-viewer
+              base="$ctrl.regs.ntbb"
+              width="$ctrl.regs.plane_w"
+              height="$ctrl.regs.plane_h"
+              on-view-memory="$ctrl.viewMemory(address, type)"
+              class="d-block h-100"
+            ></plane-viewer>
           </my-pane>
           <my-pane title="Sprites">
-            <sprite-viewer base="$ctrl.regs.satb" class="d-block h-100 overflow-auto" on-view-memory="$ctrl.viewMemory(address, type)"></sprite-viewer>
+            <sprite-viewer
+              base="$ctrl.regs.satb"
+              class="d-block h-100 overflow-auto"
+              on-view-memory="$ctrl.viewMemory(address, type)"
+            ></sprite-viewer>
           </my-pane>
         </my-tabs>
       </div>

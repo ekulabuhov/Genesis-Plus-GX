@@ -26,6 +26,8 @@
 // For simulate_instruction()
 #include "rom_analyzer.h"
 
+#include "dwarf.h"
+
 char *regs_as_json();
 char *read_memory_as_json(uint32_t address, uint16_t size, char *type);
 uint32_t read_number_token();
@@ -147,14 +149,34 @@ void onmessage(ws_cli_conn_t *client,
 		}
 	}
 
+	if (strcmp((const char *)msg, "step_over_line") == 0)
+	{
+		dwarf_ask_t *dwarf_info = dwarf_ask(m68k.pc);
+		dbg_step_over_line = dwarf_info->line_number;
+		dbg_trace = 0;
+		pause_emu = 0;
+	}
+
+	if (strcmp((const char *)msg, "step_over") == 0)
+	{
+		dbg_step_over = 1;
+		dbg_trace = 1;
+		pause_emu = 0;
+	}
+
 	if (strcmp((const char *)msg, "step") == 0)
 	{
+		dbg_step_over = 0;
+		dbg_step_over_line = 0;
 		dbg_trace = 1;
 		pause_emu = 0;
 	}
 
 	if (strcmp((const char *)msg, "run") == 0)
 	{
+		dbg_step_over = 0;
+		dbg_step_over_line = 0;
+		dbg_trace = 0;
 		pause_emu = 0;
 	}
 
@@ -191,14 +213,15 @@ void onmessage(ws_cli_conn_t *client,
 		printf("reading addr: %u, with size: %d, val: %s\n", address, size, message);
 	}
 
-	// Format: "memw <address> <value>"
+	// Format: "memw <address> <value> <memtype>"
 	if (strstr((const char *)msg, "memw ") == (const char *)msg)
 	{
 		strtok((char *)msg, " ");
 
 		uint32_t address = read_number_token();
 		uint16_t value = read_number_token();
-		write_memory_byte(address, value);
+		char *mem_type = strtok(NULL, " ");
+		write_memory_byte(address, value, mem_type);
 	}
 
 	// Format: "bpt add <address> <type> (<condition: "value_equal">)"
@@ -238,7 +261,19 @@ void onmessage(ws_cli_conn_t *client,
 		create_label(address, name);
 	}
 
-	// Format: "add comment <address> comment"
+	// Format: "fn comment <address> <comment>"
+	if (strstr((const char *)msg, "fn comment ") == (const char *)msg)
+	{
+		strtok((char *)msg, " ");
+		strtok(NULL, " "); // Skip "comment"
+
+		uint32_t address = read_number_token();
+		char *comment = strtok(NULL, "");
+
+		add_function_comment(address, comment);
+	}
+
+	// Format: "add comment <address> <comment>"
 	if (strstr((const char *)msg, "add comment ") == (const char *)msg)
 	{
 		strtok((char *)msg, " ");
@@ -283,7 +318,9 @@ char *regs_as_json()
 	comment[0] = 0;
 	simulate_instruction(m68k.pc, m68k.dar, comment, read_memory);
 
-	char *message = malloc(500);
+	dwarf_ask_t *dwarf_info = dwarf_ask(m68k.pc);
+
+	char *message = malloc(600);
 	sprintf(message, "{ \"type\": \"regs\", \"data\": {"
 					 "\"pc\": %d, "
 					 "\"d0\": %d, "
@@ -306,9 +343,15 @@ char *regs_as_json()
 					 "\"sr\": %d, "
 					 "\"prev_pc\": %d, "
 					 "\"comment\": \"%s\", "
-					 "\"ntab\": %d, "	/* Name table A base address */
-					 "\"ntbb\": %d, "	/* Name table B base address */
-					 "\"satb\": %d "	/* Sprite attribute table base address */
+					 "\"ntab\": %d, "	 /* Name table A base address */
+					 "\"ntbb\": %d, "	 /* Name table B base address */
+					 "\"satb\": %d, "	 /* Sprite attribute table base address */
+					 "\"plane_w\": %d, " /* Plane width in tiles (multiply by to get pixels) */
+					 "\"plane_h\": %d, " /* Plane height in tiles */
+					 "\"file_path\": \"%s\", "
+					 "\"function_name\": \"%s\", "
+					 "\"line_number\": %d, "
+					 "\"column\": %d "
 					 "}}",
 			m68k.pc,
 			m68k.dar[0],
@@ -333,7 +376,15 @@ char *regs_as_json()
 			comment,
 			ntab,
 			ntbb,
-			satb);
+			satb,
+			((reg[16] & 3) + 1) * 32,
+			(((reg[16] >> 4) & 3) + 1) * 32,
+			(dwarf_info ? dwarf_info->file_path : ""),
+			(dwarf_info ? dwarf_info->function_name : ""),
+			(dwarf_info ? dwarf_info->line_number : 0),
+			(dwarf_info ? dwarf_info->column : 0));
+
+	free(dwarf_info);
 
 	return message;
 }
@@ -387,4 +438,5 @@ void start_server()
 		.evs.onmessage = &onmessage});
 
 	set_debug_hook(debug_event_handler);
+	dwarf_init();
 }

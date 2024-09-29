@@ -296,6 +296,9 @@ void m68k_run(unsigned int cycles)
       cpu_hook(HOOK_M68K_E, 0, REG_PC, 0);
 #endif
 
+    /* Save current instruction PC */
+    m68k.prev_pc = REG_PC;
+
     /* Decode next instruction */
     REG_IR = m68ki_read_imm_16();
 

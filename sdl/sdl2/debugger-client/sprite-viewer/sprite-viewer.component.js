@@ -65,7 +65,7 @@ export const SpriteViewerComponent = {
     /** @type {(data: { address: string; type: string; }) => void} */
     onViewMemory;
     /** @type {import("../breakpoints/breakpoints.service.js").BreakpointsService} */
-    bps;
+    breakpointsService;
 
     /**
      * @param {import("angular").IAugmentedJQuery} $element
@@ -73,7 +73,7 @@ export const SpriteViewerComponent = {
     constructor($element, $scope, menuService, breakpointsService) {
       this.view = $element[0];
       this.menuService = menuService;
-      this.bps = breakpointsService;
+      this.breakpointsService = breakpointsService;
 
       WsService.on("open", () => {
         // When pane is not selected - the height is set to 0
@@ -239,20 +239,13 @@ export const SpriteViewerComponent = {
         {
           label: `Break on X position change (${row.locationX})`,
           click: () => {
-            if (
-              !this.bps.breakpoints.some((bp) => bp.address === xPosAddress)
-            ) {
-              // If it doesn't exist - add it
-              this.bps.breakpoints = this.bps.breakpoints.concat([
-                {
-                  address: xPosAddress,
-                  type: "vram",
-                  write: true,
-                  enabled: true,
-                  comment: `Break on sprite #${row.index} X position change`,
-                },
-              ]);
-            }
+            this.breakpointsService.addBreakpoint({
+              address: xPosAddress,
+              type: "vram",
+              write: true,
+              enabled: true,
+              comment: `Break on sprite #${row.index} X position change`,
+            });
           },
         },
       ]);

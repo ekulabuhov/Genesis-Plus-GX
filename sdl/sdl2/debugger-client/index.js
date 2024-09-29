@@ -10,7 +10,13 @@
  *  x: boolean;
  * }>} regs 
  * 
- * @typedef {{start_address: number, end_address: number, name?: string, references: string[]}} func
+ * @typedef {{
+ *  start_address: number, 
+ *  end_address: number, 
+ *  name?: string, 
+ *  references: string[],
+ *  comment: string,
+ * }} func
  * */
 
 import { AsmViewerComponent } from "./asm-viewer/asm-viewer.component.js";
@@ -94,11 +100,6 @@ appModule.controller(
           this.regs = response.data;
         }
 
-        if (response.type === "asm") {
-          this.asm = response.data;
-          this.totalInstructionCount = response.count;
-        }
-
         this.$scope.$apply();
       });
 
@@ -155,9 +156,18 @@ appModule.controller(
 );
 
 document.onkeydown = function (e) {
-  if (e.key === "F11" || e.key === "F10") {
+  // Step Over
+  if (e.key === "F10") {
+    e.preventDefault();
+    WsService.send(`step_over`);
+    return;
+  }
+
+  // Step Into
+  if (e.key === "F11") {
     e.preventDefault();
     WsService.send(`step`);
+    return;
   }
 
   if (e.key === 'g' && e.metaKey) {
@@ -165,7 +175,8 @@ document.onkeydown = function (e) {
     WsService.asmViewer.showAsm(response);
   }
 
-  if (e.key === '-' && e.ctrlKey && e.target.nodeName !== 'INPUT') {
+  // Ctrl + Left Arrow or Ctrl + Minus navigates asm viewer to the previous location
+  if ((e.key === '-' || e.key === 'ArrowLeft') && e.ctrlKey && e.target.nodeName !== 'INPUT') {
     e.preventDefault();
     WsService.asmViewer.goBack();
   }

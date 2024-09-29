@@ -656,18 +656,20 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[17], r
     cs_m68k_op op_0 = insn.detail->m68k.operands[0];
     cs_m68k_op op_1 = insn.detail->m68k.operands[1];
     int instr_size = insn.detail->m68k.op_size.cpu_size;
+    // 0xFF for 8 bit, 0xFFFF for 16 bit
+    int size_mask = pow(2, instr_size * 8) - 1;
     comment[0] = 0;
 
     if (insn.id == M68K_INS_ADD)
     {
-        int mask = pow(2, instr_size * 8) - 1;
-        int op_1_value = (reg_states[op_0.reg] + reg_states[op_1.reg]) & mask;
+        int op_1_value = (reg_states[op_0.reg] + reg_states[op_1.reg]) & size_mask;
         sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
     }
     else if (insn.id == M68K_INS_ADDI)
     {
-        int op_0_value = reg_states[op_0.reg] + op_1.imm;
-        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
+        // addi.l #-0x110,D0
+        int op_1_value = reg_states[op_1.reg] + op_0.imm;
+        sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
     }
     else if (insn.id == M68K_INS_ADDQ)
     {
@@ -686,15 +688,30 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[17], r
     }
     else if (insn.id == M68K_INS_LEA)
     {
-        int value = insn.address + insn.detail->m68k.operands[0].mem.disp + 2;
-        reg_states[op_1.reg] = value;
+        char op_values[2][20];
 
-        sprintf(comment, "%s = %02X", reg_to_string(reg_string, op_1.reg), value);
+        // lea.l $a400.w, a1 
+        if (op_0.address_mode == M68K_AM_ABSOLUTE_DATA_SHORT)
+        {
+            sprintf(op_values[0], "%X", op_0.imm + 0xFFFF0000);
+        }
+
+        // lea $62a00.l, a1
+        if (op_0.address_mode == M68K_AM_ABSOLUTE_DATA_LONG)
+        {
+            sprintf(op_values[0], "%X", op_0.imm);
+        }
+
+        if (op_1.address_mode == M68K_AM_REG_DIRECT_ADDR)
+        {
+            sprintf(op_values[1], "%s", reg_to_string(reg_string, op_1.reg));
+        }
+
+        sprintf(comment, "%s = %s", op_values[1], op_values[0]);
     }
     else if (insn.id == M68K_INS_LSL)
     {
         // lsl.w #$8, d0
-        int mask = pow(2, instr_size * 8) - 1;
         int value = reg_states[op_1.reg] << op_0.imm;
         sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), value);
     }
@@ -743,6 +760,15 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[17], r
             cs_m68k_op op = insn.detail->m68k.operands[i];
             switch (op.address_mode)
             {
+            case M68K_AM_AREGI_INDEX_BASE_DISP:
+            {
+                // Handles (a1, d0.w), d1 - where a1 is base reg and d0 is index reg
+                uint32_t base_reg_value = reg_states[op.mem.base_reg];
+                uint32_t index_reg_value = reg_states[op.mem.index_reg] & 0xFFFF;
+                int value = read_value(base_reg_value + index_reg_value, instr_size, read_memory);
+                sprintf(op_values[i], "%X (%X)", value, base_reg_value + index_reg_value);
+            }
+            break;
             case M68K_AM_REGI_ADDR_DISP:
             {
                 // handles movea.w 2(a0), a3 - we want to get the value pointed by a0
@@ -815,8 +841,7 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[17], r
     }
     else if (insn.id == M68K_INS_NEG)
     {
-        int pw = pow(2, instr_size * 8) - 1;
-        int op_0_value = -reg_states[op_0.reg] & pw;
+        int op_0_value = -reg_states[op_0.reg] & size_mask;
         sprintf(comment, "%s = %X", reg_to_string(reg_string, op_0.reg), op_0_value);
     }
     else if (insn.id == M68K_INS_ORI)
@@ -826,8 +851,7 @@ void analyze_instruction(cs_insn insn, char *comment, uint32_t reg_states[17], r
     }
     else if (insn.id == M68K_INS_SUB)
     {
-        int pw = pow(2, instr_size * 8) - 1;
-        int op_1_value = (reg_states[op_1.reg] - reg_states[op_0.reg]) & pw;
+        int op_1_value = (reg_states[op_1.reg] - reg_states[op_0.reg]) & size_mask;
         sprintf(comment, "%s = %X", reg_to_string(reg_string, op_1.reg), op_1_value);
     }
     else if (insn.id == M68K_INS_SUBI)

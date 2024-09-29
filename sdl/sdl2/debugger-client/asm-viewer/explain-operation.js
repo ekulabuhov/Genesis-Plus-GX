@@ -6,12 +6,13 @@ import { toHex } from "../utils.js";
  */
 export function explainOperation(instr, regs, previousOp = false) {
   let explain;
-  instr.valTooltip = "";
+  let valTooltip = "";
 
   if (instr.mnemonic.split(".")[0] === "move") {
+    /** @type { 'l' | 'w' } */
     const size = instr.mnemonic.split(".")[1];
     // const operands = instr.op_str.split(", ");
-    const operands = regs.comment.split(' = ').reverse();
+    const operands = regs.comment.split(" = ").reverse();
     const fromValueIndirect = operands[0].includes("(");
     // const fromValue = decodeOperand(operands[0], regs, size, previousOp);
     const fromValue = parseInt(operands[0].replaceAll(/[\(\)]/g, ""), 16);
@@ -33,158 +34,24 @@ export function explainOperation(instr, regs, previousOp = false) {
 
       // Additional break down VDP writes
       if (toValue === 0xc00004) {
-        if ((fromValue & 0xff00) === 0x8000) {
-          instr.valTooltip = `mode set register #1\n\n`;
-          const m3 = fromValue & (0b1 << 1);
-          const ie1 = fromValue & (0b1 << 4);
-          const lcb = fromValue & (0b1 << 5);
-          instr.valTooltip += `${m3 ? "" : "do not"} freeze HV counter\n`;
-          instr.valTooltip += `${
-            ie1 ? "enable" : "disable"
-          } hblank interrupt\n`;
-          instr.valTooltip += `${
-            lcb ? "" : "do not"
-          } blank the leftmost column (8px wide)\n`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8100) {
-          instr.valTooltip = `mode set register #2\n\n`;
-          const m2 = fromValue & 8;
-          const m1 = fromValue & 16;
-          const ie0 = fromValue & 32;
-          const disp = fromValue & 64;
-          instr.valTooltip += `set vertical resolution to ${
-            m2 ? "30" : "28"
-          } tiles\n`;
-          instr.valTooltip += `${m1 ? "allow" : "forbid"} DMA operations\n`;
-          instr.valTooltip += `${
-            ie0 ? "enable" : "disable"
-          } vblank interrupt\n`;
-          instr.valTooltip += `${disp ? "enable" : "disable"} rendering\n`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8200) {
-          instr.valTooltip = `plane A table address (divided by $2000)\n`;
-          instr.valTooltip += `new value: $${(
-            (fromValue << 10) &
-            0xe000
-          ).toString(16)}`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8300) {
-          instr.valTooltip = `window table base address (divided by $800). In H40 mode, WD11 must be 0.`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8400) {
-          instr.valTooltip = `plane B table base address (divided by $2000)\n`;
-          instr.valTooltip += `new value: $${(
-            (fromValue << 13) &
-            0xe000
-          ).toString(16)}`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8500) {
-          instr.valTooltip = `sprite table base address (divided by $200). In H40 mode, AT9 must be 0.\n`;
-          instr.valTooltip += `new value: $${(
-            (fromValue << 9) &
-            0xfe00
-          ).toString(16)}`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8700) {
-          instr.valTooltip = `background color`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8a00) {
-          instr.valTooltip = `hblank interrupt rate\n\nhow many lines to wait between hblank interrupts`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8b00) {
-          instr.valTooltip = `mode set register #3`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8c00) {
-          instr.valTooltip = `mode set register #4\n\n`;
-          const rs = fromValue & 0x81;
-          const lsm = fromValue & 6;
-          const ste = fromValue & 8;
-
-          instr.valTooltip += `horizontal resolution: ${
-            rs === 0x81 ? 40 : 32
-          } tiles\n`;
-          instr.valTooltip += `${
-            ste ? "enable" : "disable"
-          } shadow/highlight\n`;
-          instr.valTooltip += `${lsm ? "interlaced mode" : "no interlacing"}`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8d00) {
-          instr.valTooltip = `hscroll table base address (divided by $400)`;
-        }
-
-        if ((fromValue & 0xff00) === 0x8f00) {
-          instr.valTooltip = `autoincrement amount (in bytes)`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9000) {
-          instr.valTooltip = `tilemap size\n\n`;
-          const hzs = fromValue & 3;
-          const vzs = (fromValue >> 4) & 3;
-          instr.valTooltip = `Size in tiles: ${(hzs + 1) * 32}x${
-            (vzs + 1) * 32
-          }`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9100) {
-          instr.valTooltip = `window X division`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9200) {
-          instr.valTooltip = `window Y division`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9300) {
-          instr.valTooltip = `DMA length (low)`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9400) {
-          instr.valTooltip = `DMA length (high)`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9500) {
-          instr.valTooltip = `DMA source (low)`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9600) {
-          instr.valTooltip = `DMA source (middle)`;
-        }
-
-        if ((fromValue & 0xff00) === 0x9700) {
-          instr.valTooltip = `DMA source (high)\n\n`;
-          const dmd = (fromValue & 0xff) >> 6;
-          const op = {
-            0: "DMA transfer (DMD0 becomes SA23)",
-            1: "DMA transfer (DMD0 becomes SA23)",
-            2: "VRAM fill",
-            3: "VRAM copy",
-          };
-
-          instr.valTooltip += op[dmd];
+        valTooltip = explainVDPOperation(fromValue);
+        if (size === 'l') {
+          valTooltip += '\n' + explainVDPOperation(fromValue >> 16);
         }
       }
 
       if (toValue === 0xa00000) {
-        instr.valTooltip = `$A00000 is the start of Z80 RAM`;
+        valTooltip = `$A00000 is the start of Z80 RAM`;
       }
 
       if (toValue === 0xa11100) {
         if (fromValue === 0x100) {
-          instr.valTooltip = `Stop Z80 with BusReq to access Z80 memory`;
+          valTooltip = `Stop Z80 with BusReq to access Z80 memory`;
         }
       }
 
       if (toValue === 0xa12100) {
-        instr.valTooltip = `Z80 reset control register`;
+        valTooltip = `Z80 reset control register`;
       }
     }
   }
@@ -202,7 +69,133 @@ export function explainOperation(instr, regs, previousOp = false) {
     )}`;
   }
 
-  return { explain };
+  return { explain, valTooltip };
+}
+
+/**
+ * @param {number} word - 2 bytes
+ */
+function explainVDPOperation(word) {
+  let valTooltip = "";
+  if ((word & 0xff00) === 0x8000) {
+    valTooltip = `mode set register #1\n\n`;
+    const m3 = word & (0b1 << 1);
+    const ie1 = word & (0b1 << 4);
+    const lcb = word & (0b1 << 5);
+    valTooltip += `${m3 ? "" : "do not"} freeze HV counter\n`;
+    valTooltip += `${ie1 ? "enable" : "disable"} hblank interrupt\n`;
+    valTooltip += `${
+      lcb ? "" : "do not"
+    } blank the leftmost column (8px wide)\n`;
+  }
+
+  if ((word & 0xff00) === 0x8100) {
+    valTooltip = `mode set register #2\n\n`;
+    const m2 = word & 8;
+    const m1 = word & 16;
+    const ie0 = word & 32;
+    const disp = word & 64;
+    valTooltip += `set vertical resolution to ${m2 ? "30" : "28"} tiles\n`;
+    valTooltip += `${m1 ? "allow" : "forbid"} DMA operations\n`;
+    valTooltip += `${ie0 ? "enable" : "disable"} vblank interrupt\n`;
+    valTooltip += `${disp ? "enable" : "disable"} rendering\n`;
+  }
+
+  if ((word & 0xff00) === 0x8200) {
+    valTooltip = `plane A table address (divided by $2000)\n`;
+    valTooltip += `new value: $${((word << 10) & 0xe000).toString(16)}`;
+  }
+
+  if ((word & 0xff00) === 0x8300) {
+    valTooltip = `window table base address (divided by $800). In H40 mode, WD11 must be 0.`;
+  }
+
+  if ((word & 0xff00) === 0x8400) {
+    valTooltip = `plane B table base address (divided by $2000)\n`;
+    valTooltip += `new value: $${((word << 13) & 0xe000).toString(16)}`;
+  }
+
+  if ((word & 0xff00) === 0x8500) {
+    valTooltip = `sprite table base address (divided by $200). In H40 mode, AT9 must be 0.\n`;
+    valTooltip += `new value: $${((word << 9) & 0xfe00).toString(16)}`;
+  }
+
+  if ((word & 0xff00) === 0x8700) {
+    valTooltip = `background color`;
+  }
+
+  if ((word & 0xff00) === 0x8a00) {
+    valTooltip = `hblank interrupt rate\n\nhow many lines to wait between hblank interrupts`;
+  }
+
+  if ((word & 0xff00) === 0x8b00) {
+    valTooltip = `mode set register #3`;
+  }
+
+  if ((word & 0xff00) === 0x8c00) {
+    valTooltip = `mode set register #4\n\n`;
+    const rs = word & 0x81;
+    const lsm = word & 6;
+    const ste = word & 8;
+
+    valTooltip += `horizontal resolution: ${rs === 0x81 ? 40 : 32} tiles\n`;
+    valTooltip += `${ste ? "enable" : "disable"} shadow/highlight\n`;
+    valTooltip += `${lsm ? "interlaced mode" : "no interlacing"}`;
+  }
+
+  if ((word & 0xff00) === 0x8d00) {
+    valTooltip = `hscroll table base address (divided by $400)`;
+  }
+
+  if ((word & 0xff00) === 0x8f00) {
+    valTooltip = `autoincrement amount (in bytes): ${word & 0xFF}`;
+  }
+
+  if ((word & 0xff00) === 0x9000) {
+    valTooltip = `tilemap size\n\n`;
+    const hzs = word & 3;
+    const vzs = (word >> 4) & 3;
+    valTooltip = `Size in tiles: ${(hzs + 1) * 32}x${(vzs + 1) * 32}`;
+  }
+
+  if ((word & 0xff00) === 0x9100) {
+    valTooltip = `window X division`;
+  }
+
+  if ((word & 0xff00) === 0x9200) {
+    valTooltip = `window Y division`;
+  }
+
+  if ((word & 0xff00) === 0x9300) {
+    valTooltip = `DMA length (low): ${toHex(word & 0xFF)}`;
+  }
+
+  if ((word & 0xff00) === 0x9400) {
+    valTooltip = `DMA length (high): ${toHex(word & 0xFF)}`;
+  }
+
+  if ((word & 0xff00) === 0x9500) {
+    valTooltip = `DMA source (low): ${toHex(word & 0xFF)}`;
+  }
+
+  if ((word & 0xff00) === 0x9600) {
+    valTooltip = `DMA source (middle): ${toHex(word & 0xFF)}`;
+  }
+
+  if ((word & 0xff00) === 0x9700) {
+    valTooltip = `DMA source (high): ${toHex(word & 0xFF)}\n`;
+    const dmd = (word & 0xff) >> 6;
+    const op = {
+      0: "DMA transfer (DMD0 becomes SA23)",
+      1: "DMA transfer (DMD0 becomes SA23)",
+      2: "VRAM fill",
+      3: "VRAM copy",
+    };
+
+    valTooltip += op[dmd];
+  }
+
+  return valTooltip;
 }
 
 /**

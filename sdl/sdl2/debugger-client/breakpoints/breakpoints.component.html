@@ -19,7 +19,7 @@
       </tr>
     </thead>
     <tbody>
-      <tr ng-repeat="bpt in $ctrl.bps.breakpoints track by $index">
+      <tr ng-repeat="bpt in $ctrl.breakpointList() track by $index">
         <!-- Edit mode -->
         <td ng-if-start="bpt.edit">
           <input

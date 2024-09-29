@@ -1,4 +1,4 @@
-import { to0xHex } from "../utils.js";
+import { to0xHex, toHex } from "../utils.js";
 import { WsService } from "../ws.service.js";
 
 export class MemoryViewerController {
@@ -9,33 +9,38 @@ export class MemoryViewerController {
   hovered;
   // Starting address
   address = 0;
-  /** 
+  /**
    * @typedef {'rom' | 'vram' | 'cram' | 'z80' | 'ram'} memTypes
-   * 
+   *
    * @type {memTypes}
-  */
+   */
   selectedMemType = "rom";
   /** @type {HTMLDivElement} */
   view;
+  /** @type {import("angular").IScope} */
   $scope;
   memorySize = {
-    "rom": 0x400000,
-    "ram": 0x10000,
-    "z80": 0x2000,
-    "vram": 0x10000,
-    "cram": 0x80,
+    rom: 0x400000,
+    ram: 0x10000,
+    z80: 0x2000,
+    vram: 0x10000,
+    cram: 0x80,
   };
   lazyLoadTimeoutId;
   topOffset = 0;
   /** @type {import('../menu/menu.service').MenuService}*/
   menuService;
+  /** @type {import("../breakpoints/breakpoints.service.js").BreakpointsService} */
+  breakpointsService;
 
   /**
    * @param {import("angular").IAugmentedJQuery} $element
+   * @param {import("angular").IScope} $scope
    */
-  constructor($element, $scope, menuService) {
+  constructor($element, $scope, menuService, breakpointsService) {
     WsService.memoryViewer = this;
     this.menuService = menuService;
+    this.breakpointsService = breakpointsService;
 
     $element.on("mouseleave", () => {
       this.hovered = undefined;
@@ -89,6 +94,29 @@ export class MemoryViewerController {
     };
   }
 
+  gotoMenu = {
+    label: "Go to...",
+    click: () => {
+      let address = prompt("Memory: go to where?");
+      if (address) {
+        if (address.indexOf("0x") === -1) {
+          address = "0x" + address;
+        }
+        const addressI = parseInt(address, 16);
+
+        if (addressI >= 0xff0000) {
+          this.selectedMemType = "ram";
+        }
+        if (addressI <= 0xffff && this.selectedMemType === "vram") {
+          // do nothing
+        } else if (addressI <= 0x3fffff) {
+          this.selectedMemType = "rom";
+        }
+        this.showMemoryLocation(address, this.selectedMemType);
+      }
+    },
+  };
+
   #lazyLoad() {
     this.stopScrollEvents = true;
     // Debouncing
@@ -99,12 +127,21 @@ export class MemoryViewerController {
       // Load 2 screens above current screen
       // Load 1 currently visible screen
       // Load 2 screens below current screen
-      const address = Math.max(0, currentMemoryAddress - visibleLines * 16 * 2) + this.topOffset;
+      const address =
+        Math.max(0, currentMemoryAddress - visibleLines * 16 * 2) +
+        this.topOffset;
       const size = visibleLines * 16 * 5;
-      console.log(`loading from ${address.toString(16)} to ${(address+size).toString(16)}`)
+      console.log(
+        `loading from ${address.toString(16)} to ${(address + size).toString(
+          16
+        )}`
+      );
       const response = await WsService.showMemoryLocation(
         address,
-        Math.min(size, this.memorySize[this.selectedMemType] - (address - this.topOffset)),
+        Math.min(
+          size,
+          this.memorySize[this.selectedMemType] - (address - this.topOffset)
+        ),
         this.selectedMemType
       );
       this.memory = response.data;
@@ -112,7 +149,7 @@ export class MemoryViewerController {
       this.stopScrollEvents = false;
       this.$scope.$apply();
     }, 500);
-  };
+  }
 
   /**
    * @param {number} byte
@@ -125,18 +162,14 @@ export class MemoryViewerController {
     const totalSize = this.topOffset + this.memorySize[this.selectedMemType];
 
     if (
-      ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(
-        event.key
-      ) !== -1
+      ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(event.key) !==
+      -1
     ) {
       if (event.key === "ArrowRight" && this.selected + 1 < totalSize) {
         this.selected++;
       } else if (event.key === "ArrowLeft" && this.selected > 0) {
         this.selected--;
-      } else if (
-        event.key === "ArrowDown" &&
-        this.selected + 16 < totalSize
-      ) {
+      } else if (event.key === "ArrowDown" && this.selected + 16 < totalSize) {
         this.selected += 16;
       } else if (event.key === "ArrowUp" && this.selected - 16 >= 0) {
         this.selected -= 16;
@@ -194,7 +227,9 @@ export class MemoryViewerController {
       /** @type {WebSocket} */
       const ws = window["ws"];
       ws.send(
-        `memw ${to0xHex(this.selected)} ${to0xHex(value)} ${this.selectedMemType}`
+        `memw ${to0xHex(this.selected)} ${to0xHex(value)} ${
+          this.selectedMemType
+        }`
       );
 
       if (this.selected + 1 < totalSize) {
@@ -208,22 +243,26 @@ export class MemoryViewerController {
    * @param {memTypes} type
    */
   showMemoryLocation(address, type) {
-    const alignedAddress = address.slice(0, address.length - 1) + "0";
+    const selectedAddress = parseInt(address) & 0xffffff;
+    const alignedAddress = selectedAddress & 0xfffff0;
     this.selectedMemType = type;
     this.setTopOffset();
 
-    this.view.scroll(0, (parseInt(alignedAddress) - this.topOffset) / 16 * 24);
-    this.selected = parseInt(address);
+    // Running in setTimeout to allow the height of the view to update before scrolling
+    setTimeout(() =>
+      this.view.scroll(0, ((alignedAddress - this.topOffset) / 16) * 24)
+    );
+    this.selected = selectedAddress;
   }
 
   setTopOffset() {
     this.topOffset = 0;
-    if (this.selectedMemType === 'z80') {
-      this.topOffset = 0xA00000;
+    if (this.selectedMemType === "z80") {
+      this.topOffset = 0xa00000;
     }
 
-    if (this.selectedMemType === 'ram') {
-      this.topOffset = 0xFF0000;
+    if (this.selectedMemType === "ram") {
+      this.topOffset = 0xff0000;
     }
   }
 
@@ -235,25 +274,42 @@ export class MemoryViewerController {
     this.#lazyLoad();
   }
 
+  /**
+   * @param {MouseEvent} event
+   */
   onContextMenu(event) {
     if (event.which !== 3) {
       return;
     }
 
-    this.menuService.showMenu(event, [
-      {
-        label: "Go to...",
-        click: () => {
-          let address = prompt("Memory: go to where?");
-          if (address) {
-            if (address.indexOf("0x") === -1) {
-              address = "0x" + address;
-            }
-            this.showMemoryLocation(address, this.selectedMemType);
-          }
-        }
-      }
-    ]);
+    this.menuService.showMenu(event, [this.gotoMenu]);
+  }
+
+  /**
+   * @param {number} address
+   * @param {MouseEvent} event
+   */
+  onHexValueClick(event, address) {
+    this.selected = address;
+    event.target?.focus();
+
+    // Handle context menu
+    if (event.which === 3) {
+      this.menuService.showMenu(event, [
+        this.gotoMenu,
+        {
+          label: `Break on write (${toHex(address)})`,
+          click: () => {
+            this.breakpointsService.addBreakpoint({
+              address: to0xHex(address),
+              type: this.selectedMemType,
+              write: true,
+              enabled: true,
+            })
+          },
+        },
+      ]);
+    }
   }
 }
 
@@ -285,7 +341,7 @@ export const MemoryViewerComponent = {
             <div class="hex-values">
                 <span 
                   tabindex="0"
-                  ng-mousedown="$ctrl.selected = $ctrl.address + lineIndex * 16 + $index" 
+                  ng-mousedown="$ctrl.onHexValueClick($event, $ctrl.address + lineIndex * 16 + $index)"
                   ng-mouseover="$ctrl.hovered = lineIndex * 16 + $index" 
                   ng-class="{selected: $ctrl.selected === $ctrl.address + lineIndex * 16 + $index, hovered: $ctrl.hovered === lineIndex * 16 + $index}" 
                   class="hex-value" 

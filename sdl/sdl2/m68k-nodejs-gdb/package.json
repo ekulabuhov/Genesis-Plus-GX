@@ -1,0 +1,16 @@
+{
+  "name": "m68k-nodejs-gdb",
+  "version": "1.0.0",
+  "description": "DWARF parser for NodeJS - based on pyelftools",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node index.ts"
+  },
+  "keywords": [],
+  "author": "Eugene Kulabuhov",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "ts-node": "^10.9.2"
+  }
+}

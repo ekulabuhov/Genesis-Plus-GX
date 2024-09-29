@@ -4,7 +4,7 @@ import { WsService } from "../ws.service.js";
  * @typedef {import("./breakpoints.service.js").Breakpoint & { edit: boolean }} Breakpoint
  */
 
-/** @type {Breakpoint} */
+/** @type {Partial<Breakpoint>} */
 const defaultBreakpoint = { edit: true, enabled: true, type: "rom" };
 
 export const BreakpointsComponent = {
@@ -19,11 +19,13 @@ export const BreakpointsComponent = {
     bps;
     /** @type {(data: { address: string; type: string; }) => void} */
     onViewMemory;
+    /** @type {Partial<Breakpoint>?} */
+    newBreakpoint = null;
 
     /**
-     * 
-     * @param {*} menuService 
-     * @param {import("./breakpoints.service.js").BreakpointsService} breakpointsService 
+     *
+     * @param {*} menuService
+     * @param {import("./breakpoints.service.js").BreakpointsService} breakpointsService
      */
     constructor(menuService, breakpointsService) {
       this.menuService = menuService;
@@ -34,14 +36,26 @@ export const BreakpointsComponent = {
      * @param {number} index
      */
     onBptDelete(index) {
-      const copy = Array.from(this.bps.breakpoints);
-      copy.splice(index, 1);
-      this.bps.breakpoints = copy;
-      WsService.syncBreakpoints();
+      const copy = this.breakpointList();
+      if (copy[index] === this.newBreakpoint) {
+        this.newBreakpoint = null;
+      } else {
+        copy.splice(index, 1);
+        this.bps.breakpoints = copy;
+        WsService.syncBreakpoints();
+      }
+    }
+
+    breakpointList() {
+      const list = [...this.bps.breakpoints];
+      if (this.newBreakpoint) {
+        list.push(this.newBreakpoint);
+      }
+      return list;
     }
 
     onBptAdd() {
-      this.bps.breakpoints = this.bps.breakpoints.concat([{...defaultBreakpoint}]);
+      this.newBreakpoint = { ...defaultBreakpoint };
     }
 
     /**
@@ -57,7 +71,14 @@ export const BreakpointsComponent = {
           "0x" + bpt.address.toLowerCase().split("x")[1].toUpperCase();
       }
 
-      this.bps.breakpoints = Object.assign([], this.bps.breakpoints, { [index]: bpt });
+      if (bpt === this.newBreakpoint) {
+        this.bps.addBreakpoint(bpt);
+        this.newBreakpoint = null;
+      } else {
+        this.bps.breakpoints = Object.assign([], this.bps.breakpoints, {
+          [index]: bpt,
+        });
+      }
       WsService.syncBreakpoints();
     }
 
@@ -92,8 +113,8 @@ export const BreakpointsComponent = {
           label: `View in disassembler (${bpt.address})`,
           click: () => {
             WsService.asmViewer.showAsm(bpt.address);
-          }
-        }
+          },
+        },
       ]);
     }
   },

@@ -5,14 +5,37 @@ import { explainOperation } from "./explain-operation.js";
 /**
  * @typedef {Object} instruction
  * @prop {number} address - position of the instruction
- * @prop {string} mnemonic - instruction name (e.g. 'jsr')
+ * @prop {string} [mnemonic] - instruction name (e.g. 'jsr'), absent for labels
  * @prop {string} [op_1] - value of the first operand (e.g. 'CD8')
  * @prop {string} op_str - label of the first operand (e.g. 'FUN_copyDataToRam')
  * @prop {string} [explain] - is used to add context to executed instruction, e.g. explain type of VDP operation
- * @prop {string} valTooltip - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
+ * @prop {string} [valTooltip] - is used to add even more context when you hover over, e.g. explain bits set in VDP operation
  * @prop {string} comment
- * @prop {'label' | 'empty'} [type] - modifies how data is rendered, e.g. labels omit addresses at the beginning
+ * @prop {'label' | 'empty' | 'function_comment'} [type] - modifies how data is rendered, e.g. labels omit addresses at the beginning
  */
+
+/**
+ * Detect branch instructions to make addresses clickable.
+ * Another reason is to show an arrow line.
+ */
+const branchInstructions = [
+  "bcc",
+  "bcs",
+  "beq",
+  "bge",
+  "bgt",
+  "bhi",
+  "bhs",
+  "ble",
+  "blo",
+  "bls",
+  "blt",
+  "bmi",
+  "bne",
+  "bpl",
+  "bvc",
+  "bvs",
+];
 
 export class AsmViewerController {
   /** @type {instruction[]} */
@@ -41,12 +64,14 @@ export class AsmViewerController {
   waitingForAsm = false;
   /** @type {import("../breakpoints/breakpoints.service.js").BreakpointsService} */
   bps;
+  modalComment = "";
 
   /**
    * @param {import("../menu/menu.service.js").MenuService} menuService
    * @param {import("../breakpoints/breakpoints.service.js").BreakpointsService} breakpointsService
+   * @param {import("angular").IScope} $scope
    */
-  constructor(menuService, breakpointsService) {
+  constructor(menuService, breakpointsService, $scope) {
     this.menuService = menuService;
     this.bps = breakpointsService;
     this.bps.onChange(() => this.updateBreakpointMarkers());
@@ -59,11 +84,38 @@ export class AsmViewerController {
     WsService.on("message", (data) => {
       if (data.type === "asm") {
         this.firstInstructionIndex = data.index;
+        this.asm = data.data;
+        this.totalInstructionCount = data.count;
+
+        // Make branch instructions clickable
+        this.asm.forEach((instr) => {
+          if (
+            branchInstructions.indexOf(instr.mnemonic?.split(".")[0]) !== -1 &&
+            !instr.op_1
+          ) {
+            // Remove the $ sign from the address
+            instr.op_1 = instr.op_str.slice(1);
+          }
+        });
+
+        this.attachReferencesToFunctionLabels();
+        this.updateBreakpointMarkers();
+
+        if (this.stopScrollEvents) {
+          this.stopScrollEvents = false;
+        }
+
+        if (this.waitingForAsm) {
+          this.waitingForAsm = false;
+          // Sets the height of the scroll window, so we can scroll to the current instruction
+          $scope.$apply();
+          this.refresh();
+        }
       }
     });
 
     const el = this.disasmWindow;
-    el.onscroll = (e) => {
+    el.onscroll = () => {
       if (this.stopScrollEvents) {
         return;
       }
@@ -123,9 +175,9 @@ export class AsmViewerController {
     }, /** @type {number[]} */ ([]));
   }
 
-  /** @type {WebSocket} */
-  get ws() {
-    return window["ws"];
+  updateDebugLineTop() {
+    const instrIndex = this.asm.findIndex((a) => a.address === this.regs.pc && !a.type);
+    this.debugLineTop = (instrIndex + this.firstInstructionIndex) * 24 + 2;
   }
 
   /** @type {HTMLDivElement} */
@@ -134,26 +186,12 @@ export class AsmViewerController {
   }
 
   $onChanges(changesObj) {
-    if (changesObj["asm"]?.currentValue) {
-      this.insertFunctionLabels();
-      this.updateBreakpointMarkers();
-
-      if (this.stopScrollEvents) {
-        this.stopScrollEvents = false;
-      }
-
-      if (this.waitingForAsm) {
-        this.waitingForAsm = false;
-        this.refresh();
-      }
-    }
-
     if (changesObj["regs"]?.currentValue) {
       this.refresh();
     }
   }
 
-  insertFunctionLabels() {
+  attachReferencesToFunctionLabels() {
     this.funcs.forEach((func) => {
       const instruction = this.asm.find(
         (asm) => asm.address === func.start_address
@@ -194,9 +232,7 @@ export class AsmViewerController {
     const instr = this.asm.find((a) => a.address === this.regs.pc && !a.type);
     if (!instr) {
       console.log("instruction not found for ", this.regs.pc);
-      /** @type {WebSocket} */
-      const ws = window["ws"];
-      ws.send(`asm ${this.regs.pc} 0 100`);
+      WsService.getAsm({ address: this.regs.pc });
       this.waitingForAsm = true;
       return;
     }
@@ -233,31 +269,13 @@ export class AsmViewerController {
       });
     }
 
-    const { explain } = explainOperation(instr, this.regs);
+    const { explain, valTooltip } = explainOperation(instr, this.regs);
     instr.explain = explain;
+    instr.valTooltip = valTooltip;
 
     if (instr.comment !== this.regs.comment && !instr.explain) {
       instr.explain = this.regs.comment;
     }
-
-    const branchInstructions = [
-      "bcc",
-      "bcs",
-      "beq",
-      "bge",
-      "bgt",
-      "bhi",
-      "bhs",
-      "ble",
-      "blo",
-      "bls",
-      "blt",
-      "bmi",
-      "bne",
-      "bpl",
-      "bvc",
-      "bvs",
-    ];
 
     if (branchInstructions.indexOf(instr.mnemonic.split(".")[0]) !== -1) {
       const target = parseInt(instr.op_str.replace("$", "0x"));
@@ -270,7 +288,24 @@ export class AsmViewerController {
     }
   }
 
-  displayTooltip(
+  /**
+   *
+   * @param {MouseEvent} event
+   * @param {instruction} pa
+   */
+  displayFunctionTooltip(event, pa) {
+    // pa.op_1 contains the address of the function, e.g. 149CE
+    const foundFunc = this.funcs.find(
+      (f) => f.start_address === parseInt(pa.op_1, 16)
+    );
+    if (!foundFunc) {
+      return;
+    }
+
+    this.displayTooltip(event, foundFunc.comment);
+  }
+
+  displayMnemonicTooltip(
     /** @type {MouseEvent}  */ event,
     /** @type {string} */ mnemonic
   ) {
@@ -279,12 +314,7 @@ export class AsmViewerController {
       return;
     }
 
-    new bootstrap.Tooltip(event.target, {
-      title,
-      container: "body",
-      sanitize: false,
-      customClass: "asm-tooltip",
-    }).show();
+    this.displayTooltip(event, title);
   }
 
   displayExplainTooltip(event, title) {
@@ -292,6 +322,15 @@ export class AsmViewerController {
       return;
     }
 
+    this.displayTooltip(event, title);
+  }
+
+  /**
+   *
+   * @param {MouseEvent} event
+   * @param {string} title
+   */
+  displayTooltip(event, title) {
     new bootstrap.Tooltip(event.target, {
       title,
       container: "body",
@@ -367,7 +406,78 @@ export class AsmViewerController {
           }
         },
       },
+      {
+        label: `Add comment to ${pa.mnemonic}`,
+        click: () => this.addFunctionComment(pa),
+      },
     ]);
+  }
+
+  /**
+   *
+   * @param {instruction} pa
+   */
+  addFunctionComment(pa) {
+    const domModal = document.getElementById("exampleModal");
+    const modal = new bootstrap.Modal(domModal);
+    domModal?.addEventListener("shown.bs.modal", () => {
+      document.getElementById("modalCommentTextArea")?.select();
+    });
+
+    const foundFunc = this.funcs.find(
+      (func) => func.start_address === pa.address
+    );
+
+    if (!foundFunc) {
+      console.error("Function not found for address", pa.address);
+      return;
+    }
+
+    this.modalComment = foundFunc.comment || "";
+    this.modalTitle = `Add comment to ${foundFunc.name}`;
+    this.modalSaveChanges = () => {
+      WsService.send(
+        `fn comment 0x${pa.address.toString(16)} ${this.modalComment.replaceAll(
+          "'",
+          "''"
+        )}`
+      );
+      if (foundFunc) {
+        foundFunc.comment = this.modalComment;
+      }
+      modal.hide();
+
+      // Find index to re-insert new comment
+      const spliceIndex = this.asm.findIndex(
+        (a) =>
+          a.address === pa.address &&
+          (a.type === "function_comment" || a.type === "label")
+      );
+
+      // Remove existing comments
+      this.asm = this.asm.filter(
+        (a) => !(a.address === pa.address && a.type === "function_comment")
+      );
+
+      // Insert new comment if needed
+      if (this.modalComment) {
+        this.asm.splice(
+          spliceIndex,
+          0,
+          ...("\n" + this.modalComment).split("\n").map((comment) => ({
+            address: pa.address,
+            type: "function_comment",
+            comment: comment,
+          }))
+        );
+      }
+
+      // Re-position the breakpoint markers
+      this.updateBreakpointMarkers();
+      // Re-position debug line
+      this.updateDebugLineTop();
+    };
+    modal.show();
   }
 
   /**
@@ -414,6 +524,10 @@ export class AsmViewerController {
    * @param {instruction} pa
    */
   onCodeRowClick(pa) {
+    if (pa.type === "function_comment") {
+      return this.addFunctionComment(pa);
+    }
+
     const comment = prompt(
       `Add comment to 0x${pa.address.toString(16)}:`,
       pa.comment || ""
@@ -436,9 +550,9 @@ export class AsmViewerController {
     const hexAddress = "0x" + pa.address.toString(16);
 
     // If it exists - remove it
-    if (this.bps.breakpoints.some((bp) => bp.address === hexAddress)) {
+    if (this.bps.breakpoints.some((bp) => parseInt(bp.address, 16) === pa.address)) {
       this.bps.breakpoints = this.bps.breakpoints.filter(
-        (bp) => bp.address !== hexAddress
+        (bp) => parseInt(bp.address, 16) !== pa.address
       );
     } else {
       // If it doesn't exist - add it
@@ -457,73 +571,10 @@ export class AsmViewerController {
 }
 
 export const AsmViewerComponent = {
-  template: `
-    <div class="disasm-window overflow-y-scroll" style="position: relative">
-        <div class="code-overlay w-100" style="position: absolute">
-            <div
-              class="debug-line"
-              style="top: {{ $ctrl.debugLineTop }}px"
-            ></div>
-            <div
-              ng-repeat="bpt in $ctrl.breakpointMarkers track by $index"
-              class="breakpoint-glyph"
-              style="top: {{ bpt }}px"
-            ></div>
-            <div
-              ng-if="$ctrl.branchLineTop"
-              class="branch-line"
-              style="top: {{ $ctrl.branchLineTop }}px; height: {{ $ctrl.branchLineHeight }}px"
-            ></div>
-        </div>
-        <div class="code-listing" style="height: {{ $ctrl.totalInstructionCount * 24 }}px">
-            <div 
-              class="code-row" 
-              ng-repeat="pa in $ctrl.asm" style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px"
-              ng-click="$ctrl.onCodeRowClick(pa)"
-            >
-                <span ng-if-start="pa.type === 'label'"
-                  ng-click="$ctrl.onFnLabelClick($event, pa)"
-                >{{pa.mnemonic}}:</span>
-                <button ng-if-end
-                  ng-if="pa.references.length" 
-                  class="btn btn-link p-0"
-                  ng-click="$ctrl.onReferencesClick($event, pa.references)"
-                >
-                  {{pa.references.length}} reference{{pa.references.length > 1 ? 's' : ''}}
-                </button>
-
-                <span ng-if="pa.type === 'empty'"></span>
-
-                <span ng-if-start="pa.type !== 'label' && pa.type !== 'empty'" 
-                  class="addr"
-                  ng-click="$ctrl.onBreakpointToggle($event, pa)"
-                >
-                    0x{{pa.address.toString(16)}}:
-                </span>
-                <span ng-if="$ctrl.showBytes" class="bytes">
-                    {{pa.bytes}}
-                </span>
-                <span class="mnemonic" ng-mouseover="$ctrl.displayTooltip($event, pa.mnemonic)">
-                    {{pa.mnemonic}}
-                </span>
-                <span ng-if="!pa.op_1" class="op_str">
-                    <span class="text-truncate">{{pa.op_str}}</span>
-                </span>
-                <button class="btn btn-link p-0" ng-if="pa.op_1" ng-click="$ctrl.onOpClick($event, pa)">
-                    {{pa.op_str}}
-                </button>
-                <span ng-if-end ng-mouseover="$ctrl.displayExplainTooltip($event, pa.valTooltip)">
-                    {{pa.explain}}
-                </span>
-                <span ng-if="pa.comment" class="comment">; {{pa.comment.replaceAll('\n', '\n; ')}} {{ pa.extra_lines }}</span>
-            </div>
-        </div>
-    </div>`,
   bindings: {
     regs: "<",
-    asm: "<",
     showBytes: "<",
-    totalInstructionCount: "<",
   },
   controller: AsmViewerController,
+  templateUrl: "asm-viewer/asm-viewer.component.html",
 };

@@ -13,6 +13,7 @@
 jmp_buf jmp_env;
 
 #include "storage.h"
+#include "gdb.h"
 
 static Uint32 sdl_sync_timer_callback(Uint32 interval, void *param);
 
@@ -761,6 +762,7 @@ int main (int argc, char **argv)
   set_config_defaults();
 
   start_server();
+  start_gdb_server();
   set_cpu_hook(process_breakpoints);
 
   /* mark all BIOS as unloaded */

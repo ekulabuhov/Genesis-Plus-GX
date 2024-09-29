@@ -1,0 +1,143 @@
+<div class="disasm-window overflow-y-scroll" style="position: relative">
+  <div class="code-overlay w-100" style="position: absolute">
+    <div class="debug-line" style="top: {{ $ctrl.debugLineTop }}px"></div>
+    <div
+      ng-repeat="bpt in $ctrl.breakpointMarkers track by $index"
+      class="breakpoint-glyph"
+      style="top: {{ bpt }}px"
+    ></div>
+    <div
+      ng-if="$ctrl.branchLineTop"
+      class="branch-line"
+      style="top: {{ $ctrl.branchLineTop }}px; height: {{
+        $ctrl.branchLineHeight
+      }}px"
+    ></div>
+  </div>
+  <div
+    class="code-listing"
+    style="height: {{ $ctrl.totalInstructionCount * 24 }}px"
+  >
+    <div
+      class="code-row"
+      ng-repeat="pa in $ctrl.asm"
+      style="top: {{ ($ctrl.firstInstructionIndex + $index) * 24 }}px"
+      ng-click="$ctrl.onCodeRowClick(pa)"
+    >
+      <!-- Handle labels and function names -->
+      <span
+        ng-if-start="pa.type === 'label'"
+        ng-click="$ctrl.onFnLabelClick($event, pa)"
+        >{{ pa.mnemonic }}:</span
+      >
+      <button
+        ng-if-end
+        ng-if="pa.references.length"
+        class="btn btn-link p-0"
+        ng-click="$ctrl.onReferencesClick($event, pa.references)"
+      >
+        {{ pa.references.length }} reference{{
+          pa.references.length > 1 ? "s" : ""
+        }}
+      </button>
+
+      <!-- Handle function comments -->
+      <span ng-if="pa.type === 'function_comment'" class="comment"
+        ><span ng-if="pa.comment[0] !== ';'">; </span>{{ pa.comment }}</span
+      >
+
+      <span ng-if="pa.type === 'empty'"></span>
+
+      <!-- Empty type is an instruction -->
+      <span
+        ng-if-start="pa.type === ''"
+        class="addr"
+        ng-click="$ctrl.onBreakpointToggle($event, pa)"
+      >
+        0x{{ pa.address.toString(16) }}:
+      </span>
+      <span ng-if="$ctrl.showBytes" class="bytes">
+        {{ pa.bytes }}
+      </span>
+      <span
+        class="mnemonic"
+        ng-mouseover="$ctrl.displayMnemonicTooltip($event, pa.mnemonic)"
+      >
+        {{ pa.mnemonic }}
+      </span>
+      <span
+        ng-if="!pa.op_1"
+        class="op_str"
+      >
+        <span class="text-truncate">{{ pa.op_str }}</span>
+      </span>
+      <button
+        class="btn btn-link p-0"
+        ng-if="pa.op_1"
+        ng-click="$ctrl.onOpClick($event, pa)"
+        ng-mouseover="$ctrl.displayFunctionTooltip($event, pa)"
+        title="{{ pa.op_1_tooltip }}"
+      >
+        {{ pa.op_str }}
+      </button><span class="op_str" ng-if="pa.op_2">{{ pa.op_2 }}</span>
+      <span ng-mouseover="$ctrl.displayExplainTooltip($event, pa.valTooltip)">
+        {{ pa.explain }}
+      </span>
+      <span ng-if="pa.comment" class="comment" ng-if-end
+        >; {{ pa.comment.replaceAll("\n", "\n; ") }} </span
+      >
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div
+    class="modal fade modal-lg"
+    id="exampleModal"
+    tabindex="-1"
+    aria-labelledby="exampleModalLabel"
+    aria-hidden="true"
+  >
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h1 class="modal-title fs-5" id="exampleModalLabel">
+            {{ $ctrl.modalTitle }}
+          </h1>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+            aria-label="Close"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="modalCommentTextArea" class="form-label">Comment</label>
+            <textarea
+              class="form-control"
+              id="modalCommentTextArea"
+              rows="{{ $ctrl.modalComment.split('\n').length + 2 }}"
+              ng-model="$ctrl.modalComment"
+            ></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            ng-click="$ctrl.modalSaveChanges()"
+          >
+            Save changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

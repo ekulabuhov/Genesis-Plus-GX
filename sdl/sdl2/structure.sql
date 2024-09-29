@@ -4,6 +4,9 @@ CREATE UNIQUE INDEX "address_uniq" ON "instructions" ("address");
 CREATE TABLE "instruction_comments" ("id" integer,"address" int NOT NULL,"comment" text, PRIMARY KEY (id));
 CREATE UNIQUE INDEX "ic_address_unique" ON "instruction_comments" ("address");
 
+CREATE TABLE "function_comments" ("id" integer,"address" int NOT NULL,"comment" text, PRIMARY KEY (id));
+CREATE UNIQUE INDEX "fc_address_uniq" ON "function_comments" ("address");
+
 CREATE TABLE "labels" ("id" integer,"address" text,"name" text, "source" text, PRIMARY KEY (id));
 CREATE UNIQUE INDEX "labels_address_uniq" ON "labels" ("address");
 

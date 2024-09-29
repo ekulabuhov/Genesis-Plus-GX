@@ -42,4 +42,14 @@ export class BreakpointsService {
   onChange(handler) {
     this.#onChangeHandler = handler;
   }
+
+  /**
+   * Adds breakpoint if it doesn't exist already
+   * @param {Breakpoint} newBP
+   */
+  addBreakpoint(newBP) {
+    if (!this.breakpoints.some((bp) => bp.address === newBP.address)) {
+      this.breakpoints = this.breakpoints.concat([newBP]);
+    }
+  }
 }
